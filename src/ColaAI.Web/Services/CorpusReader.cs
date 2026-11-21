@@ -45,6 +45,6 @@ public sealed class CorpusReader
         }
         if (docs.Count == 0) throw new InvalidDataException("Nenhum material com texto disponível.");
         warnings.Add("A cobertura total do Blackboard não foi comprovada. Avaliações e informações somente em imagens não estão garantidas neste acervo.");
-        return new Corpus(data.Course.Title ?? "Disciplina", docs, warnings, data.Files.Count, excluded, data.Coverage ?? "nao-confirmada");
+        return new Corpus(data.Course.Title ?? "Disciplina", docs, warnings, data.Files.Count, excluded, data.Coverage ?? "nao-confirmada", data.Course.Url);
     }
 }

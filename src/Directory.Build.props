@@ -1,0 +1,1 @@
+<Project><PropertyGroup><DefaultItemExcludes>$(DefaultItemExcludes);**/._*;**/.DS_Store</DefaultItemExcludes></PropertyGroup></Project>

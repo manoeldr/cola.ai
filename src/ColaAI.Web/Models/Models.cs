@@ -7,7 +7,7 @@ public sealed record SourceFile(string Name, string Status, string? SourcePage, 
 public sealed record SourcePage(int Page, string Text, bool NeedsOcr);
 public sealed record Document(string Id, string Name, IReadOnlyList<SourcePage> Pages);
 public sealed record Corpus(string Title, IReadOnlyList<Document> Documents, IReadOnlyList<string> Warnings,
-    int TotalFiles, int ExcludedFiles, string Coverage)
+    int TotalFiles, int ExcludedFiles, string Coverage, string? SourceKey = null)
 {
     public int PageCount => Documents.Sum(d => d.Pages.Count);
     public int CharacterCount => Documents.Sum(d => d.Pages.Sum(p => p.Text.Length));

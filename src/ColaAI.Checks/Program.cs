@@ -33,9 +33,68 @@ Check(handler.Calls==before+1,"Sem repetição automática nem fallback");
 handler.Status=HttpStatusCode.OK;handler.Body=handler.Body.Replace("STOP","MAX_TOKENS");
 await Reject(async()=>await service.GenerateAsync(corpus,default),"Resposta truncada rejeitada");
 if(args.Length>0){await using var real=File.OpenRead(args[0]);var imported=await reader.ReadAsync(real);Check(imported.Documents.Count==19&&imported.PageCount==445&&imported.CharacterCount==217042,"Acervo real: 19 PDFs, 445 páginas, 217042 caracteres");var input=GeminiSummaryService.BuildInput(imported);Check(imported.Documents.All(d=>input.Contains(d.Id)),"Todos os documentos reais incluídos no pedido");}
+
+var dbPath=Path.Combine(Path.GetTempPath(),"cola-check-"+Guid.NewGuid()+".db");
+try
+{
+ var library=new LocalLibrary(dbPath);
+ var stable=LocalLibrary.Stable(corpus with{SourceKey="test-course"});
+ library.Save(stable);library.Save(stable);
+ Check(library.List().Count==1,"Reimportação idempotente de disciplina");
+ var reopened=new LocalLibrary(dbPath);
+ Check(reopened.Load(LocalLibrary.CourseKey(stable))!.PageCount==2,"Acervo persiste ao reabrir SQLite");
+ Check(reopened.Search(stable,"Conceito").Count==2,"Índice FTS encontra trechos com página e arquivo");
+ Check(reopened.Search(stable,"\" OR * --").Count==0,"Sintaxe FTS do usuário é neutralizada");
+ var another=LocalLibrary.Stable(corpus with{Title="Outra",SourceKey="other-course",Documents=[new("old","Outro.pdf",[new(1,"exclusivo",false)])]});
+ library.Save(another);
+ Check(library.Search(stable,"exclusivo").Count==0,"Pesquisa isolada por disciplina");
+ var pipelineHandler=new FakeHandler();
+ pipelineHandler.Reply=body=>{
+  using var request=JsonDocument.Parse(body);
+  var input=request.RootElement.GetProperty("contents")[0].GetProperty("parts")[0].GetProperty("text").GetString()!;
+  using var data=JsonDocument.Parse(input);
+  List<Citation> citations;
+  if(data.RootElement.TryGetProperty("documents",out var documents))citations=documents.EnumerateArray().Select(d=>new Citation(d.GetProperty("documentId").GetString()!,d.GetProperty("pages")[0].GetProperty("page").GetInt32())).ToList();
+  else if(data.RootElement.TryGetProperty("documentSummaries",out var abstracts))citations=abstracts.EnumerateArray().SelectMany(d=>d.GetProperty("sections").EnumerateArray()).SelectMany(d=>d.GetProperty("references").EnumerateArray()).Select(d=>new Citation(d.GetProperty("documentId").GetString()!,d.GetProperty("page").GetInt32())).Distinct().ToList();
+  else citations=data.RootElement.GetProperty("excerpts").EnumerateArray().Select(d=>new Citation(d.GetProperty("documentId").GetString()!,d.GetProperty("page").GetInt32())).Distinct().ToList();
+  var answer=JsonSerializer.Serialize(new GeneratedSummary("Teste",[new("Tema","Resumo de teste",citations)]),CorpusReader.JsonOptions);
+  return JsonSerializer.Serialize(new{candidates=new[]{new{finishReason="STOP",content=new{parts=new[]{new{text=answer}}}}}});
+ };
+ var pipelineGemini=new GeminiSummaryService(new HttpClient(pipelineHandler),settings);
+ var study=new StudyService(library,pipelineGemini);
+ pipelineHandler.FailAt=2;
+ await Reject(async()=>await study.SummarizeAsync(stable,_=>{},default),"Interrupção de cota durante resumos individuais");
+ Check(study.CachedDocuments(stable)==1,"Resumo concluído é salvo antes da interrupção");
+ pipelineHandler.FailAt=0;var requestsBefore=pipelineHandler.Calls;
+ await study.SummarizeAsync(stable,_=>{},default);
+ Check(pipelineHandler.Calls==requestsBefore+2,"Retomada gera só o material faltante e a consolidação");
+ requestsBefore=pipelineHandler.Calls;await study.SummarizeAsync(stable,_=>{},default);
+ Check(pipelineHandler.Calls==requestsBefore,"Resumo geral repetido não chama a IA");
+ Check(!pipelineHandler.Bodies.Last().Contains("Conceito A"),"Consolidação recebe resumos, não o texto original");
+ var changed=LocalLibrary.Stable(corpus with{SourceKey="test-course",Documents=[corpus.Documents[0],corpus.Documents[1] with{Pages=[new(1,"conteudo atualizado",false)]}]});
+ library.Save(changed);requestsBefore=pipelineHandler.Calls;
+ await study.SummarizeAsync(changed,_=>{},default);
+ Check(pipelineHandler.Calls==requestsBefore+2,"Arquivo alterado invalida só seu resumo e a síntese geral");
+ Check(library.Search(changed,"Conceito B").All(h=>h.DocumentId!=stable.Documents[1].Id),"Versão antiga removida do índice ativo");
+ await study.AskAsync(changed,"atualizado",default);
+ Check(!pipelineHandler.Bodies.Last().Contains("Conceito A"),"Pergunta envia só trechos recuperados");
+ requestsBefore=pipelineHandler.Calls;
+ await Reject(async()=>await study.AskAsync(changed,"palavrainexistente",default),"Pergunta sem evidência não é enviada à IA");
+ Check(pipelineHandler.Calls==requestsBefore,"Busca sem resultado não consome chamada");
+ var otherModel=new StudyService(library,new GeminiSummaryService(new HttpClient(pipelineHandler),Options.Create(new GeminiOptions{ApiKey="fake",FreeTierProjectConfirmed=true,Model="test-other-model"})));
+ requestsBefore=pipelineHandler.Calls;await otherModel.SummarizeAsync(changed,_=>{},default);
+ Check(pipelineHandler.Calls==requestsBefore+3,"Troca de modelo não reutiliza resumos do modelo anterior");
+ var noKey=new StudyService(library,new GeminiSummaryService(new HttpClient(new FakeHandler()),Options.Create(new GeminiOptions())));
+ Check((await noKey.SummarizeAsync(changed,_=>{},default)).DocumentCount==2,"Resumo salvo pode ser lido sem chave");
+}
+finally
+{
+ Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+ foreach(var file in Directory.GetFiles(Path.GetDirectoryName(dbPath)!,Path.GetFileName(dbPath)+"*"))File.Delete(file);
+}
 Console.WriteLine($"{checks} verificações concluídas; nenhuma chamada ao Gemini real.");
 sealed class FakeHandler:HttpMessageHandler
 {
- public HttpStatusCode Status=HttpStatusCode.OK; public string Body="{}";public int Calls;
- protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct){Calls++;return Task.FromResult(new HttpResponseMessage(Status){Content=new StringContent(Body,Encoding.UTF8,"application/json")});}
+ public HttpStatusCode Status=HttpStatusCode.OK; public string Body="{}";public int Calls; public int FailAt; public Func<string,string>? Reply; public List<string> Bodies=[];
+ protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct){Calls++; var input=await request.Content!.ReadAsStringAsync(ct);Bodies.Add(input);return new HttpResponseMessage(Calls==FailAt?HttpStatusCode.TooManyRequests:Status){Content=new StringContent(Reply?.Invoke(input)??Body,Encoding.UTF8,"application/json")};}
 }

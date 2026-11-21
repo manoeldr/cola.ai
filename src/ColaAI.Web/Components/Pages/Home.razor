@@ -6,6 +6,8 @@
 @using System.Text.Json
 @inject CorpusReader Reader
 @inject GeminiSummaryService Gemini
+@inject LocalLibrary Library
+@inject StudyService Study
 
 <PageTitle>Cola.ai · Resumo da disciplina</PageTitle>
 <main>
@@ -16,8 +18,14 @@
         <h2>1. Importe a disciplina</h2>
         <p>Selecione <strong>cola-ai-acervo-disciplina.json</strong>, exportado pela importação em lote.</p>
         <InputFile OnChange="Import" accept=".json,application/json" disabled="@busy" />
-        <p class="muted">O acervo fica na memória desta sessão. Fechar ou recarregar a página descarta os dados não exportados.</p>
+        <p class="muted">O acervo e o índice ficam salvos neste computador, em SQLite. Não é necessário importar novamente a cada visita.</p>
     </section>
+    @if (courses.Count > 0)
+    {
+        <section class="card"><h2>Disciplinas salvas</h2>
+            @foreach (var course in courses) { <p><button class="secondary" disabled="@busy" @onclick="() => LoadCourse(course.Key)">@course.Title</button></p> }
+        </section>
+    }
     @if (!string.IsNullOrEmpty(error)) { <p class="error" role="alert">@error</p> }
     @if (corpus is not null)
     {
@@ -31,19 +39,42 @@
         </section>
         <section class="card">
             <h2>2. Gere o resumo geral</h2>
-            <p>Todo o texto importado será enviado ao Gemini somente ao clicar abaixo. Modelo configurado: <strong>@Gemini.Model</strong>.</p>
+            <p>@cachedDocuments de @corpus.Documents.Count resumos de materiais já salvos para este modelo.</p>
+            <p>Na primeira geração, cada material é resumido por inteiro. Os resumos são salvos e depois consolidados. Nas próximas gerações, só os materiais novos ou alterados precisam ser resumidos. Modelo: <strong>@Gemini.Model</strong>.</p>
             @if (!Gemini.Configured) { <p class="notice">A integração está pronta, mas falta configurar a chave local e confirmar um projeto sem faturamento. Consulte o README. Não cole sua chave no chat.</p> }
-            <button disabled="@(busy || !Gemini.Configured)" @onclick="Generate">@(busy ? "Gerando resumo…" : "Gerar resumo geral")</button>
-            @if (busy) { <button class="secondary" @onclick="Cancel">Cancelar</button><p role="status">Aguardando o Gemini. Mantenha esta aba aberta.</p> }
-            <p class="muted">Sem troca automática de modelo e sem repetição ao atingir cota. As cotas dependem do projeto Google; a aplicação não consegue verificar seu faturamento.</p>
+            <button disabled="@busy" @onclick="Generate">@(busy ? "Gerando resumo…" : "Gerar resumo geral")</button>
+            @if (busy) { <button class="secondary" @onclick="Cancel">Cancelar</button><p role="status">@progress</p> }
+            <p class="muted">Se a cota interromper o processo, os resumos concluídos continuam salvos. Ao clicar novamente, a aplicação retoma do que falta. Sem troca automática de modelo. As cotas dependem do projeto Google; a aplicação não consegue verificar seu faturamento.</p>
+        </section>
+    }
+    @if (corpus is not null)
+    {
+        <section class="card"><h2>3. Pesquise no acervo</h2>
+            <p>A busca local não usa tokens. Para uma resposta da IA, apenas os trechos encontrados serão enviados.</p>
+            <input class="query" aria-label="Pesquisar ou perguntar" @bind="question" maxlength="2000" disabled="@busy" placeholder="Ex.: redes neurais e overfitting" />
+            <button disabled="@busy" @onclick="Search">Buscar trechos</button>
+            <button class="secondary" disabled="@(busy || !Gemini.Configured)" @onclick="Ask">Perguntar à IA</button>
+            @foreach (var hit in hits)
+            { <details class="source"><summary>@hit.Name · página @hit.Page</summary><pre>@hit.Text</pre></details> }
+            @if (searchPerformed && hits.Count == 0) { <p>Nenhum trecho encontrado. Tente palavras usadas no material.</p> }
+            @if (answer is not null)
+            { <article><h3>@answer.Summary.Title</h3>
+                @foreach (var topic in answer.Summary.Sections)
+                { <p class="prose">@topic.Text</p>
+                    @foreach (var citation in topic.References)
+                    { var doc = corpus.Documents.Single(d => d.Id == citation.DocumentId);
+                        <details class="source"><summary>@doc.Name · página @citation.Page</summary><pre>@doc.Pages.Single(p => p.Page == citation.Page).Text</pre></details>
+                    }
+                }
+            </article> }
         </section>
     }
     @if (result is not null)
     {
         <section class="card result">
             <span class="badge">RESUMO GERADO</span><h2>@result.Summary.Title</h2>
-            <p>@result.DocumentCount materiais enviados · @result.PageCount páginas · referências verificadas estruturalmente.</p>
-            <p class="muted">A existência das fontes foi validada; isso não garante que toda afirmação esteja correta ou que cada página tenha sido abordada. Confira os trechos abaixo.</p>
+            <p>@result.DocumentCount materiais contemplados · @result.PageCount páginas · referências verificadas estruturalmente.</p>
+            <p class="muted">Esta revisão consolida resumos por material e pode perder detalhes. A existência das fontes foi validada; isso não garante que toda afirmação esteja correta ou que cada página tenha sido abordada. Confira os trechos abaixo.</p>
             <a class="download" href="@ExportUrl" download="cola-ai-resumo.json">Salvar resumo e referências</a>
             @foreach (var topic in result.Summary.Sections)
             {
@@ -61,6 +92,33 @@
 </main>
 
 @code {
+    private IReadOnlyList<SavedCourse> courses = [];
+    private IReadOnlyList<SearchHit> hits = [];
+    private SummaryResult? answer;
+    private string question = "";
+    private string progress = "";
+    private bool searchPerformed;
+    private int cachedDocuments;
+    protected override void OnInitialized() { courses = Library.List(); }
+    private void LoadCourse(string key)
+    {
+        if(busy)return;
+        corpus = Library.Load(key); result = corpus is null ? null : Study.SavedSummary(corpus);
+        cachedDocuments = corpus is null ? 0 : Study.CachedDocuments(corpus);
+        answer = null; hits = []; question = ""; searchPerformed = false; error = null;
+    }
+    private void Search()
+    { if(corpus is null)return; hits = Library.Search(corpus, question); answer = null; searchPerformed = true; }
+    private async Task Ask()
+    {
+        if(corpus is null || busy)return;
+        error=null; answer=null;busy=true;cancellation?.Dispose();cancellation=new CancellationTokenSource();
+        try { hits=Library.Search(corpus,question);searchPerformed=true;answer=await Study.AskAsync(corpus,question,cancellation.Token); }
+        catch(OperationCanceledException){error="Resposta cancelada ou tempo limite excedido.";}
+        catch(HttpRequestException){error="Falha de conexão com o Gemini. Nenhuma nova tentativa foi feita.";}
+        catch(Exception ex) when(ex is InvalidDataException or InvalidOperationException or JsonException){error=ex.Message;}
+        finally{busy=false;}
+    }
     private Corpus? corpus;
     private SummaryResult? result;
     private string? error;
@@ -71,7 +129,7 @@
     private async Task Import(InputFileChangeEventArgs e)
     {
         error = null; result = null; corpus = null; busy = true;
-        try { await using var stream = e.File.OpenReadStream(CorpusReader.MaxUploadBytes); corpus = await Reader.ReadAsync(stream); }
+        try { await using var stream = e.File.OpenReadStream(CorpusReader.MaxUploadBytes); corpus = LocalLibrary.Stable(await Reader.ReadAsync(stream)); Library.Save(corpus); courses=Library.List(); cachedDocuments=Study.CachedDocuments(corpus); result=Study.SavedSummary(corpus); hits=[];answer=null;searchPerformed=false; }
         catch (Exception ex) when (ex is InvalidDataException or IOException or JsonException) { error = ex.Message; }
         finally { busy = false; }
     }
@@ -80,11 +138,11 @@
         if (corpus is null || busy) return;
         error = null; result = null; busy = true;
         cancellation?.Dispose(); cancellation = new CancellationTokenSource();
-        try { result = await Gemini.GenerateAsync(corpus, cancellation.Token); }
+        try { result = await Study.SummarizeAsync(corpus, message => { progress=message; _ = InvokeAsync(StateHasChanged); }, cancellation.Token); }
         catch (OperationCanceledException) { error = cancellation.IsCancellationRequested ? "Geração cancelada." : "O tempo de resposta foi excedido. Nenhuma nova tentativa foi feita."; }
         catch (HttpRequestException) { error = "Não foi possível conectar ao Gemini. Confira a conexão. Nenhuma nova tentativa foi feita."; }
         catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or JsonException) { error = ex.Message; }
-        finally { busy = false; }
+        finally { busy = false; cachedDocuments=Study.CachedDocuments(corpus); }
     }
     private void Cancel() => cancellation?.Cancel();
     public void Dispose() { cancellation?.Cancel(); cancellation?.Dispose(); }

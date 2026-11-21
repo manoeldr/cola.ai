@@ -2,7 +2,7 @@ using ColaAI.Web.Models;
 namespace ColaAI.Web.Services;
 public static class SummaryValidator
 {
-    public static void Validate(GeneratedSummary summary, Corpus corpus)
+    public static void Validate(GeneratedSummary summary, Corpus corpus, bool requireEveryDocument = true)
     {
         if (string.IsNullOrWhiteSpace(summary.Title) || summary.Sections is null || summary.Sections.Count == 0)
             throw new InvalidDataException("A IA retornou um resumo vazio ou incompleto.");
@@ -23,7 +23,7 @@ public static class SummaryValidator
             }
         }
         var missing = documents.Keys.Except(covered).ToArray();
-        if (missing.Length > 0)
+        if (requireEveryDocument && missing.Length > 0)
             throw new InvalidDataException($"O resumo não referenciou todos os materiais ({string.Join(", ", missing)}). Não foi aceito como resumo geral.");
     }
 }
