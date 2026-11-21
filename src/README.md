@@ -86,3 +86,14 @@ dotnet test ColaAI.Tests/ColaAI.Tests.csproj
 ```
 
 São 18 casos unitários de validação e 16 cenários de fluxo com SQLite temporário e HTTP Gemini simulado (34 no total). Não exigem chave, prova real ou cota. Cobrem formatos/tamanho, leitura ilegível, limites, persistência, isolamento por matéria, edição, referências inexistentes, falta de evidência, cota, cancelamento e retomada. O projeto ColaAI.Checks mantém a regressão mais ampla dos resumos e da busca.
+
+
+## API para o iPhone
+
+A API mobile fica desativada por padrão. `../scripts/start-mobile-backend.sh` descobre o IPv4 privado do Wi-Fi e ativa `MobileApi__Enabled=true` e `MobileApi__Host`. Rode o script no mesmo Terminal que já contém `Gemini__ApiKey` e `Gemini__FreeTierProjectConfirmed`; ele preserva essas variáveis. Não abra portas no roteador.
+
+A página local `/mobile-setup` exibe o código gerado em `App_Data/mobile-access.key` e o endereço para o iPhone. Não envia nem mostra a chave Gemini. A página e toda a interface Blazor são bloqueadas para conexões da rede. Apenas `/api/mobile` aceita acesso remoto, sempre com `Authorization: Bearer <código>`, sem cookies ou CORS para sites. O tráfego HTTP é destinado à rede privada de confiança deste projeto.
+
+Endpoints: `GET /health`, `POST /courses/import`, `GET /courses`, `GET /courses/{key}`, `POST /courses/{key}/summary`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel`, todos sob `/api/mobile`. Upload máximo de 20 MB, validado também para corpo sem Content-Length. A importação usa CorpusReader, IDs estáveis e SQLite FTS existentes. A geração roda em BackgroundService com progresso e snapshot do acervo; requisições repetidas para o mesmo trabalho ativo retornam seu ID. Um trabalho por vez; cache e validação das fontes usam StudyService. Tarefas/progresso são voláteis, resumos parciais e finais persistem no SQLite. Não há retries nem fallback de modelo.
+
+Testes de integração usam servidor HTTP local, SQLite temporário e transporte Gemini simulado para verificar autenticação, proteção da interface web, importação/indexação, geração, cache, cota, cancelamento e idempotência durante um trabalho ativo. Nenhuma cota real é consumida.
