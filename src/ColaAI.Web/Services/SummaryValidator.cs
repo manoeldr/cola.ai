@@ -24,6 +24,6 @@ public static class SummaryValidator
         }
         var missing = documents.Keys.Except(covered).ToArray();
         if (requireEveryDocument && missing.Length > 0)
-            throw new InvalidDataException($"O resumo não referenciou todos os materiais ({string.Join(", ", missing)}). Não foi aceito como resumo geral.");
+            throw new InvalidDataException($"O resumo não referenciou todos os materiais ({string.Join(", ", missing.Select(id => documents[id].Name))}). Não foi aceito como resumo geral.");
     }
 }

@@ -16,4 +16,4 @@ public sealed record Citation(string DocumentId, int Page);
 public sealed record SummarySection(string Title, string Text, List<Citation> References);
 public sealed record GeneratedSummary(string Title, List<SummarySection> Sections);
 public sealed record SummaryResult(GeneratedSummary Summary, string Model, DateTimeOffset CreatedAt,
-    IReadOnlyList<string> Warnings, int DocumentCount, int PageCount, int CharacterCount, int? TotalTokens);
+    IReadOnlyList<string> Warnings, int DocumentCount, int PageCount, int CharacterCount, int? TotalTokens, int SupplementedDocuments = 0);

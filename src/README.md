@@ -29,7 +29,7 @@ dotnet run --project ColaAI.Web/ColaAI.Web.csproj
 
 Alternativa: .NET User Secrets (`Gemini:ApiKey`, `Gemini:FreeTierProjectConfirmed`) em ambiente Development. O UserSecretsId está no projeto. Não inserir a chave no código, frontend ou extensão.
 
-Modelo padrão configurável: `gemini-2.5-flash-lite`. A documentação consultada em 17/11/2026 lista nível gratuito para entrada e saída padrão. Disponibilidade e cotas variam; não há troca automática de modelo, ativação de serviços ou novas tentativas. O modelo é configurável com `Gemini__Model` se necessário após verificar suporte ao nível gratuito.
+Modelo padrão configurável: `gemini-3.5-flash-lite`. A documentação consultada em 18/11/2026 lista nível gratuito para entrada e saída padrão. Disponibilidade e cotas variam; não há troca automática de modelo, ativação de serviços ou novas tentativas. O modelo é configurável com `Gemini__Model` se necessário após verificar suporte ao nível gratuito.
 
 ## Base local, índice e resumos reaproveitáveis
 
@@ -64,3 +64,25 @@ As verificações usam SQLite real temporário e transporte Gemini simulado, sem
 Configurar a chave do projeto no nível gratuito e avaliar a qualidade de uma geração real. Importação automática da extensão e aplicativo mobile continuam como etapas posteriores. Não é necessário contratar serviços para usar a base local.
 
 Referências: https://www.sqlite.org/fts5.html · https://learn.microsoft.com/en-us/dotnet/standard/data/sqlite/ · https://ai.google.dev/api/generate-content
+
+## Cobertura da síntese
+
+Os resumos individuais continuam obrigatoriamente validados. Se a consolidação temática omitir algum documento, a aplicação acrescenta uma seção explicitamente identificada como complemento por material, copiando o resumo individual já gerado e suas fontes originais. Não injeta referências em afirmações sem suporte. A resposta composta é novamente validada contra todos os documentos. A versão do cache da consolidação foi atualizada; os 19 resumos individuais existentes continuam reutilizáveis.
+
+## Questões por foto
+
+Abra Resolver questões por foto na disciplina ou /foto e escolha uma disciplina salva. Envie JPEG, PNG ou WebP de até 8 MB. A leitura usa imagem inline no Gemini e devolve enunciados editáveis, com todas as alternativas e avisos de legibilidade. Confira-os antes de Confirmar enunciados e resolver. Limite: dez questões e 8.000 caracteres por questão; não há truncamento silencioso.
+
+Cada questão consulta os trechos da disciplina e recebe resposta com referências verificadas. Sem evidência recuperada, o sistema sinaliza a ausência sem chamar o modelo para inventar resposta. O índice é lexical, então isso não prova que o conceito esteja ausente do acervo.
+
+Fotos, transcrições e respostas concluídas ficam no mesmo SQLite, por disciplina. Histórico mostra as últimas 30 sessões. Questões já concluídas não são reenviadas na retomada; editar enunciado ou mudar a versão do acervo/modelo invalida o reaproveitamento pertinente. Alterar o acervo em outra aba exige reabrir a disciplina antes de resolver.
+
+A foto é enviada somente ao clicar em Ler questões; após leitura válida, fica salva localmente. A versão inicial trabalha com uma imagem por sessão. Não inclui correção das marcações do professor, várias fotos numa mesma prova ou XP. Leitura de imagem e exatidão das resoluções ainda precisam de teste com fotos reais; os testes automatizados não garantem qualidade do modelo.
+
+## Testes da função por foto
+
+```sh
+dotnet test ColaAI.Tests/ColaAI.Tests.csproj
+```
+
+São 18 casos unitários de validação e 16 cenários de fluxo com SQLite temporário e HTTP Gemini simulado (34 no total). Não exigem chave, prova real ou cota. Cobrem formatos/tamanho, leitura ilegível, limites, persistência, isolamento por matéria, edição, referências inexistentes, falta de evidência, cota, cancelamento e retomada. O projeto ColaAI.Checks mantém a regressão mais ampla dos resumos e da busca.

@@ -1,0 +1,150 @@
+@page "/foto"
+@rendermode InteractiveServer
+@implements IDisposable
+@using ColaAI.Web.Models
+@using ColaAI.Web.Services
+@using System.Text.Json
+@inject LocalLibrary Library
+@inject PhotoService Photos
+@inject GeminiSummaryService Gemini
+
+<PageTitle>Cola.ai · Questões por foto</PageTitle>
+<main>
+    <header><a class="brand" href="/">Cola.ai</a><span class="badge">QUESTÕES POR FOTO</span></header>
+    <h1>Fotografe.<br />Confira. Resolva.</h1>
+    <p class="lead">Leia questões da imagem e receba explicações com fontes dos materiais da disciplina.</p>
+    <section class="card">
+        <h2>Disciplina</h2>
+        <select class="query" aria-label="Disciplina da foto" value="@selectedKey" @onchange="ChangeCourse" disabled="@busy">
+            <option value="">Selecione uma disciplina salva</option>
+            @foreach(var item in courses){<option value="@item.Key">@item.Title</option>}
+        </select>
+        @if(courses.Count==0){<p>Importe o acervo na <a href="/">página inicial</a> antes de usar a foto.</p>}
+    </section>
+    @if(corpus is not null)
+    {
+        <section class="card">
+            <h2>1. Escolha a foto</h2>
+            <InputFile OnChange="SelectImage" accept="image/jpeg,image/png,image/webp" capture="environment" disabled="@busy" />
+            <p class="muted">JPEG, PNG ou WebP, até 8 MB. Envie no máximo dez questões por imagem, com enunciados e alternativas completos.</p>
+            @if(image is not null)
+            {<img class="photo-preview" src="@ImageUrl" alt="Prévia da foto selecionada" />
+                <p>@imageName</p>
+                <button disabled="@(busy || !Gemini.Configured)" @onclick="ReadImage">Ler questões da foto</button>
+            }
+            <p class="muted">A foto só será enviada ao Gemini quando você clicar em Ler questões. Após a leitura, será salva localmente nesta disciplina. Não inclui correção de marcações do professor nesta versão.</p>
+            @if(!Gemini.Configured){<p class="notice">Configure a chave Gemini local para ler imagens. Nenhuma imagem é enviada ao selecionar o arquivo.</p>}
+        </section>
+    }
+    @if(!string.IsNullOrEmpty(error)){<p class="error" role="alert">@error</p>}
+    @if(busy){<section class="card"><p role="status">@progress</p><button class="secondary" @onclick="Cancel">Cancelar</button></section>}
+    @if(session is not null)
+    {
+        <section class="card">
+            <h2>2. Confira os enunciados</h2>
+            <p>Corrija a leitura antes de resolver. Confira números, fórmulas, alternativas e dados de figuras.</p>
+            @foreach(var warning in session.Transcription.Warnings){<p class="notice">@warning</p>}
+            @foreach(var edit in edits)
+            {
+                <label for="@($"question-{edit.Id}")"><strong>Questão @edit.Id</strong></label>
+                <textarea id="@($"question-{edit.Id}")" class="query" rows="6" maxlength="8000" @bind="edit.Text" @bind:event="oninput" disabled="@busy"></textarea>
+            }
+            <button disabled="@(busy || !Gemini.Configured)" @onclick="Solve">Confirmar enunciados e resolver</button>
+            <p class="muted">A resolução consulta o acervo da disciplina. Questões sem trechos encontrados serão sinalizadas. Se a cota interromper, as respostas concluídas permanecem salvas para retomar.</p>
+        </section>
+        @if(session.Result is not null)
+        {
+            <section class="card result"><h2>3. Respostas</h2>
+                <a class="download" href="@ExportUrl" download="cola-ai-respostas-foto.json">Salvar respostas e referências</a>
+                @if(session.Result.CorpusFingerprint!=LocalLibrary.Fingerprint(corpus!)){<p class="notice">O acervo mudou desde esta resolução. Confirme os enunciados para resolver com a versão atual.</p>}
+                @foreach(var item in session.Result.Answers.OrderBy(a=>a.Id))
+                {
+                    <article><h3>Questão @item.Id</h3><p class="prose">@item.Question</p>
+                        @if(item.Note is not null){<p class="notice">@item.Note</p>}
+                        @if(item.Answer is not null)
+                        {
+                            @foreach(var topic in item.Answer.Sections)
+                            {
+                                <h4>@topic.Title</h4><p class="prose">@topic.Text</p>
+                                @foreach(var reference in topic.References)
+                                {
+                                    var doc=corpus!.Documents.FirstOrDefault(d=>d.Id==reference.DocumentId);
+                                    var sourcePage=doc?.Pages.FirstOrDefault(p=>p.Page==reference.Page);
+                                    @if(sourcePage is not null){<details class="source"><summary>@doc!.Name · página @reference.Page</summary><pre>@sourcePage.Text</pre></details>}
+                                    else{<p class="muted">Fonte de uma versão anterior, indisponível no acervo ativo.</p>}
+                                }
+                            }
+                        }
+                    </article>
+                }
+            </section>
+        }
+    }
+    @if(history.Count>0)
+    {<section class="card"><h2>Fotos desta disciplina</h2><p class="muted">Últimas 30 leituras salvas neste computador.</p>
+        @foreach(var item in history){<p><button class="secondary" disabled="@busy" @onclick="()=>OpenSession(item.Id)">@item.Name · @item.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</button></p>}
+    </section>}
+    <footer><a href="/">Voltar ao acervo</a> · Manoel Rodrigues e Uilsom Cardoso</footer>
+</main>
+
+@code{
+    [SupplyParameterFromQuery(Name="course")]public string? CourseKey{get;set;}
+    private IReadOnlyList<SavedCourse> courses=[];
+    private IReadOnlyList<PhotoHistoryItem> history=[];
+    private string selectedKey="",imageName="",mime="",progress="";
+    private byte[]? image;
+    private Corpus? corpus;
+    private PhotoSession? session;
+    private List<EditQuestion> edits=[];
+    private string? error;
+    private bool busy;
+    private CancellationTokenSource? cancellation;
+    private string ImageUrl=>$"data:{mime};base64,{Convert.ToBase64String(image!)}";
+    private string ExportUrl=>"data:application/json;base64,"+Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new{session!.Id,session.Name,session.CreatedAt,session.Transcription,session.Result,course=corpus!.Title,documents=corpus.Documents.Select(d=>new{d.Id,d.Name})},CorpusReader.JsonOptions)));
+    protected override void OnInitialized(){courses=Library.List();}
+    protected override void OnParametersSet(){if(!busy&&!string.IsNullOrEmpty(CourseKey)&&CourseKey!=selectedKey)SelectCourse(CourseKey);}
+    private void ChangeCourse(ChangeEventArgs e)=>SelectCourse(e.Value?.ToString()??"");
+    private void SelectCourse(string key)
+    {selectedKey=key;corpus=Library.Load(key);session=null;image=null;edits=[];error=null;history=corpus is null?[]:Library.PhotoHistory(key);}
+    private async Task SelectImage(InputFileChangeEventArgs e)
+    {
+        image=null;session=null;edits=[];error=null;busy=true;
+        try{await using var stream=e.File.OpenReadStream(PhotoRules.MaxImageBytes);using var memory=new MemoryStream();await stream.CopyToAsync(memory);var bytes=memory.ToArray();mime=PhotoRules.DetectMime(bytes);image=bytes;imageName=e.File.Name;}
+        catch(Exception ex) when(ex is IOException or InvalidDataException){error=ex.Message;}
+        finally{busy=false;}
+    }
+    private async Task ReadImage()
+    {
+        if(corpus is null||image is null||busy)return;
+        Begin("Lendo a foto…");
+        try{session=await Photos.ReadAsync(corpus,imageName,image,cancellation!.Token);edits=session.Transcription.Questions.Select(q=>new EditQuestion{Id=q.Id,Text=q.Text}).ToList();}
+        catch(Exception ex) when(Handled(ex)){ShowError(ex);}
+        finally{End();}
+    }
+    private async Task Solve()
+    {
+        if(corpus is null||session is null||busy)return;
+        Begin("Buscando fontes para as questões…");
+        try{session=await Photos.SolveAsync(corpus,session,session.Transcription with{Questions=edits.Select(q=>new PhotoQuestion(q.Id,q.Text)).ToList()},message=>{progress=message;_=InvokeAsync(StateHasChanged);},cancellation!.Token);}
+        catch(Exception ex) when(Handled(ex)){ShowError(ex);}
+        finally
+        {
+            if(session is not null)session=Library.LoadPhoto(session.Id,selectedKey)??session;
+            End();
+        }
+    }
+    private void OpenSession(string id)
+    {
+        session=Library.LoadPhoto(id,selectedKey);error=null;
+        if(session is null)return;
+        image=session.Image;mime=session.MimeType;imageName=session.Name;
+        edits=session.Transcription.Questions.Select(q=>new EditQuestion{Id=q.Id,Text=q.Text}).ToList();
+    }
+    private void Begin(string message){error=null;busy=true;progress=message;cancellation?.Dispose();cancellation=new CancellationTokenSource();}
+    private void End(){busy=false;history=Library.PhotoHistory(selectedKey);}
+    private static bool Handled(Exception ex)=>ex is InvalidDataException or InvalidOperationException or HttpRequestException or OperationCanceledException or JsonException;
+    private void ShowError(Exception ex){error=ex is OperationCanceledException?"Operação cancelada ou tempo limite excedido. Respostas já concluídas continuam salvas.":ex is HttpRequestException?"Falha de conexão com o Gemini. Tente novamente mais tarde.":ex.Message;}
+    private void Cancel()=>cancellation?.Cancel();
+    public void Dispose(){cancellation?.Cancel();cancellation?.Dispose();}
+    private sealed class EditQuestion{public int Id{get;set;}public string Text{get;set;}="";}
+}

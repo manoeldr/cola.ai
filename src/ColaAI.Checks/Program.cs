@@ -34,6 +34,25 @@ handler.Status=HttpStatusCode.OK;handler.Body=handler.Body.Replace("STOP","MAX_T
 await Reject(async()=>await service.GenerateAsync(corpus,default),"Resposta truncada rejeitada");
 if(args.Length>0){await using var real=File.OpenRead(args[0]);var imported=await reader.ReadAsync(real);Check(imported.Documents.Count==19&&imported.PageCount==445&&imported.CharacterCount==217042,"Acervo real: 19 PDFs, 445 páginas, 217042 caracteres");var input=GeminiSummaryService.BuildInput(imported);Check(imported.Documents.All(d=>input.Contains(d.Id)),"Todos os documentos reais incluídos no pedido");}
 
+handler.Status=HttpStatusCode.BadRequest;
+handler.Body="""{"error":{"status":"INVALID_ARGUMENT","message":"API key test-key-not-real is invalid. https://example.com/?key=test-key-not-real"}}""";
+try { await service.GenerateAsync(corpus, default); throw new Exception("Erro 400 não rejeitado"); }
+catch(InvalidOperationException e)
+{
+ Check(e.Message.Contains("INVALID_ARGUMENT"),"Erro HTTP 400 mostra o motivo retornado pelo Google");
+ Check(!e.Message.Contains("test-key-not-real")&&!e.Message.Contains("https://"),"Diagnóstico não revela chave ou URL sensível");
+}
+Check(GeminiSummaryService.FormatApiError(400,"not-json","secret").Contains("HTTP 400"),"Erro não JSON recebe diagnóstico seguro");
+var oneSource=new GeneratedSummary("Síntese",[new("Tema geral","Síntese do material A",[new("D001",1)])]);
+var individualA=new GeneratedSummary("A",[new("Assunto A","Texto individual A",[new("D001",1)])]);
+var individualB=new GeneratedSummary("B",[new("Assunto B","Texto individual B",[new("D002",1)])]);
+var partial=new SummaryResult(oneSource,"fake",DateTimeOffset.UtcNow,[],2,2,20,null);
+var completed=StudyService.CompleteCoverage(partial,corpus,[individualA,individualB]);
+Check(completed.SupplementedDocuments==1 && completed.Summary.Sections.Count==2,"Omissão na síntese recebe complemento do resumo individual validado");
+Check(completed.Summary.Sections[1].Text=="Texto individual B" && completed.Summary.Sections[1].Title.StartsWith("Complemento por material"),"Complemento preserva texto original e identifica a origem");
+Check(completed.Summary.Sections[0].References.Count==1 && completed.Summary.Sections[0].References[0].DocumentId=="D001","Não acrescenta citações decorativas à prosa da síntese");
+Check(StudyService.CompleteCoverage(completed,corpus,[individualA,individualB]).Summary.Sections.Count==2,"Resumo com cobertura não recebe complementos duplicados");
+await Reject(()=>{StudyService.CompleteCoverage(partial,corpus,[individualA]);return Task.CompletedTask;},"Sem resumo individual não inventa complemento");
 var dbPath=Path.Combine(Path.GetTempPath(),"cola-check-"+Guid.NewGuid()+".db");
 try
 {
@@ -84,6 +103,55 @@ try
  var otherModel=new StudyService(library,new GeminiSummaryService(new HttpClient(pipelineHandler),Options.Create(new GeminiOptions{ApiKey="fake",FreeTierProjectConfirmed=true,Model="test-other-model"})));
  requestsBefore=pipelineHandler.Calls;await otherModel.SummarizeAsync(changed,_=>{},default);
  Check(pipelineHandler.Calls==requestsBefore+3,"Troca de modelo não reutiliza resumos do modelo anterior");
+
+ var png=Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j4WQAAAAASUVORK5CYII=");
+ Check(PhotoRules.DetectMime(png)=="image/png","Foto PNG reconhecida pela assinatura real");
+ await Reject(()=>{PhotoRules.DetectMime(Encoding.UTF8.GetBytes("<svg></svg>"));return Task.CompletedTask;},"Imagem não suportada rejeitada antes da IA");
+ await Reject(()=>{PhotoRules.DetectMime(new byte[PhotoRules.MaxImageBytes+1]);return Task.CompletedTask;},"Foto maior que 8 MB rejeitada");
+ await Reject(()=>{PhotoRules.Validate(new(false,[],[]));return Task.CompletedTask;},"Leitura ilegível não passa para resolução");
+ await Reject(()=>{PhotoRules.Validate(new(true,[],[new(1,"A"),new(1,"B")]));return Task.CompletedTask;},"Questões duplicadas rejeitadas");
+ await Reject(()=>{PhotoRules.Validate(new(true,[],Enumerable.Range(1,11).Select(i=>new PhotoQuestion(i,"Texto")).ToList()));return Task.CompletedTask;},"Mais de dez questões não são truncadas");
+ library.Save(stable);
+ var photoHandler=new FakeHandler();
+ photoHandler.Reply=body=>{
+  using var request=JsonDocument.Parse(body);
+  var parts=request.RootElement.GetProperty("contents")[0].GetProperty("parts");
+  string answer;
+  if(parts.EnumerateArray().Any(x=>x.TryGetProperty("inlineData",out _)))
+   answer=JsonSerializer.Serialize(new PhotoTranscription(true,[],[new(1,"Conceito A"),new(2,"Conceito B")]),CorpusReader.JsonOptions);
+  else{
+   using var input=JsonDocument.Parse(parts[0].GetProperty("text").GetString()!);
+   var refs=input.RootElement.GetProperty("excerpts").EnumerateArray().Select(x=>new Citation(x.GetProperty("documentId").GetString()!,x.GetProperty("page").GetInt32())).Distinct().ToList();
+   answer=JsonSerializer.Serialize(new GeneratedSummary("Resolução",[new("Resposta","Explicação fundamentada",refs)]),CorpusReader.JsonOptions);
+  }
+  return JsonSerializer.Serialize(new{candidates=new[]{new{finishReason="STOP",content=new{parts=new[]{new{text=answer}}}}}});
+ };
+ var vision=new GeminiSummaryService(new HttpClient(photoHandler),settings);
+ var photos=new PhotoService(library,vision);
+ var photo=await photos.ReadAsync(stable,"foto.png",png,default);
+ Check(photo.Transcription.Questions.Count==2,"Leitura multimodal retorna enunciados sem resolver");
+ using(var imageRequest=JsonDocument.Parse(photoHandler.Bodies[0])){var inline=imageRequest.RootElement.GetProperty("contents")[0].GetProperty("parts")[1].GetProperty("inlineData");Check(inline.GetProperty("mimeType").GetString()=="image/png"&&Convert.FromBase64String(inline.GetProperty("data").GetString()!).SequenceEqual(png),"Imagem enviada inline com MIME e base64");}
+ Check(library.LoadPhoto(photo.Id,LocalLibrary.CourseKey(stable))!.Image.SequenceEqual(png),"Foto original e transcrição persistem no SQLite");
+ Check(library.LoadPhoto(photo.Id,LocalLibrary.CourseKey(another)) is null,"Histórico de fotos isolado por disciplina");
+ photoHandler.FailAt=3;
+ await Reject(async()=>await photos.SolveAsync(stable,photo,photo.Transcription,_=>{},default),"Interrupção 429 durante resolução por foto");
+ photo=library.LoadPhoto(photo.Id,photo.CourseKey)!;
+ Check(photo.Result!.Answers.Count==1,"Resposta já concluída preservada após falha");
+ photoHandler.FailAt=0;requestsBefore=photoHandler.Calls;
+ photo=await photos.SolveAsync(stable,photo,photo.Transcription,_=>{},default);
+ Check(photo.Result!.Answers.Count==2&&photoHandler.Calls==requestsBefore+1,"Retomada resolve apenas a questão faltante");
+ requestsBefore=photoHandler.Calls;
+ photo=await photos.SolveAsync(stable,photo,photo.Transcription,_=>{},default);
+ Check(photoHandler.Calls==requestsBefore,"Questões concluídas não são resolvidas novamente");
+ var edited=photo.Transcription with{Questions=[new(1,"Conceito A atualizado"),new(2,"Conceito B")]};
+ requestsBefore=photoHandler.Calls;photo=await photos.SolveAsync(stable,photo,edited,_=>{},default);
+ Check(photoHandler.Calls==requestsBefore+1,"Editar um enunciado invalida só sua resposta");
+ requestsBefore=photoHandler.Calls;
+ var noSources=photo.Transcription with{Questions=[new(5,"mitocondria cloroplasto")]};
+ photo=await photos.SolveAsync(stable,photo,noSources,_=>{},default);
+ Check(photo.Result!.Answers[0].Status=="sem-fontes"&&photoHandler.Calls==requestsBefore,"Questão sem evidência sinalizada sem chamada à IA");
+ var unreadable=new FakeHandler{Body=JsonSerializer.Serialize(new{candidates=new[]{new{finishReason="STOP",content=new{parts=new[]{new{text="{\"readable\":false,\"warnings\":[\"Foto borrada\"],\"questions\":[]}"}}}}}})};
+ await Reject(async()=>await new GeminiSummaryService(new HttpClient(unreadable),settings).TranscribeAsync(png,default),"Transcrição real no formato ilegível é rejeitada");
  var noKey=new StudyService(library,new GeminiSummaryService(new HttpClient(new FakeHandler()),Options.Create(new GeminiOptions())));
  Check((await noKey.SummarizeAsync(changed,_=>{},default)).DocumentCount==2,"Resumo salvo pode ser lido sem chave");
 }
@@ -91,6 +159,12 @@ finally
 {
  Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
  foreach(var file in Directory.GetFiles(Path.GetDirectoryName(dbPath)!,Path.GetFileName(dbPath)+"*"))File.Delete(file);
+}
+if(args.Length>1)
+{
+ var realLibrary=new LocalLibrary(args[1]);
+ var realCorpus=realLibrary.Load(realLibrary.List()[0].Key)!;
+ Check(realLibrary.Search(realCorpus,"overfitting").Count>0,"Banco real retorna evidências sobre overfitting");
 }
 Console.WriteLine($"{checks} verificações concluídas; nenhuma chamada ao Gemini real.");
 sealed class FakeHandler:HttpMessageHandler

@@ -32,6 +32,7 @@
         <section class="card">
             <h2>@corpus.Title</h2>
             <div class="stats"><span><strong>@corpus.Documents.Count</strong> materiais</span><span><strong>@corpus.PageCount</strong> páginas</span><span><strong>@corpus.CharacterCount.ToString("N0")</strong> caracteres</span></div>
+            <p><a class="download" href="@($"/foto?course={LocalLibrary.CourseKey(corpus)}")">Resolver questões por foto</a></p>
             <details><summary>Materiais e cobertura</summary>
                 <ul>@foreach (var d in corpus.Documents) { <li>@d.Id · @d.Name · @d.Pages.Count páginas</li> }</ul>
                 @foreach (var warning in corpus.Warnings) { <p class="muted">@warning</p> }
@@ -51,9 +52,10 @@
     {
         <section class="card"><h2>3. Pesquise no acervo</h2>
             <p>A busca local não usa tokens. Para uma resposta da IA, apenas os trechos encontrados serão enviados.</p>
-            <input class="query" aria-label="Pesquisar ou perguntar" @bind="question" maxlength="2000" disabled="@busy" placeholder="Ex.: redes neurais e overfitting" />
+            <input class="query" aria-label="Pesquisar ou perguntar" @bind="question" @bind:event="oninput" maxlength="2000" disabled="@busy" placeholder="Ex.: redes neurais e overfitting" />
             <button disabled="@busy" @onclick="Search">Buscar trechos</button>
             <button class="secondary" disabled="@(busy || !Gemini.Configured)" @onclick="Ask">Perguntar à IA</button>
+            @if (searchPerformed) { <p class="muted">Pesquisa: <strong>@lastQuery</strong> · @hits.Count trecho(s) encontrado(s).</p> }
             @foreach (var hit in hits)
             { <details class="source"><summary>@hit.Name · página @hit.Page</summary><pre>@hit.Text</pre></details> }
             @if (searchPerformed && hits.Count == 0) { <p>Nenhum trecho encontrado. Tente palavras usadas no material.</p> }
@@ -73,6 +75,8 @@
     {
         <section class="card result">
             <span class="badge">RESUMO GERADO</span><h2>@result.Summary.Title</h2>
+            @if (result.SupplementedDocuments > 0)
+            { <p class="notice">A síntese temática foi complementada com os resumos individuais de @result.SupplementedDocuments material(is) que não receberam referência na consolidação. Os complementos estão identificados abaixo, com seus textos e fontes originais.</p> }
             <p>@result.DocumentCount materiais contemplados · @result.PageCount páginas · referências verificadas estruturalmente.</p>
             <p class="muted">Esta revisão consolida resumos por material e pode perder detalhes. A existência das fontes foi validada; isso não garante que toda afirmação esteja correta ou que cada página tenha sido abordada. Confira os trechos abaixo.</p>
             <a class="download" href="@ExportUrl" download="cola-ai-resumo.json">Salvar resumo e referências</a>
@@ -96,6 +100,7 @@
     private IReadOnlyList<SearchHit> hits = [];
     private SummaryResult? answer;
     private string question = "";
+    private string lastQuery = "";
     private string progress = "";
     private bool searchPerformed;
     private int cachedDocuments;
@@ -108,12 +113,17 @@
         answer = null; hits = []; question = ""; searchPerformed = false; error = null;
     }
     private void Search()
-    { if(corpus is null)return; hits = Library.Search(corpus, question); answer = null; searchPerformed = true; }
+    {
+        if(corpus is null)return;
+        error=null;answer=null;lastQuery=question.Trim();
+        if(string.IsNullOrWhiteSpace(lastQuery)){error="Digite um termo ou uma pergunta antes de pesquisar.";hits=[];searchPerformed=false;return;}
+        hits = Library.Search(corpus, lastQuery); searchPerformed = true;
+    }
     private async Task Ask()
     {
         if(corpus is null || busy)return;
         error=null; answer=null;busy=true;cancellation?.Dispose();cancellation=new CancellationTokenSource();
-        try { hits=Library.Search(corpus,question);searchPerformed=true;answer=await Study.AskAsync(corpus,question,cancellation.Token); }
+        try { lastQuery=question.Trim(); hits=Library.Search(corpus,lastQuery);searchPerformed=true;answer=await Study.AskAsync(corpus,lastQuery,cancellation.Token); }
         catch(OperationCanceledException){error="Resposta cancelada ou tempo limite excedido.";}
         catch(HttpRequestException){error="Falha de conexão com o Gemini. Nenhuma nova tentativa foi feita.";}
         catch(Exception ex) when(ex is InvalidDataException or InvalidOperationException or JsonException){error=ex.Message;}
