@@ -1,0 +1,91 @@
+@page "/"
+@rendermode InteractiveServer
+@implements IDisposable
+@using ColaAI.Web.Models
+@using ColaAI.Web.Services
+@using System.Text.Json
+@inject CorpusReader Reader
+@inject GeminiSummaryService Gemini
+
+<PageTitle>Cola.ai · Resumo da disciplina</PageTitle>
+<main>
+    <header><span class="brand">Cola.ai</span><span class="badge">FASE 2 · C# / .NET</span></header>
+    <h1>Seu acervo.<br />Uma revisão completa.</h1>
+    <p class="lead">Importe os materiais coletados pela extensão e gere um resumo que considere todo o texto disponível.</p>
+    <section class="card">
+        <h2>1. Importe a disciplina</h2>
+        <p>Selecione <strong>cola-ai-acervo-disciplina.json</strong>, exportado pela importação em lote.</p>
+        <InputFile OnChange="Import" accept=".json,application/json" disabled="@busy" />
+        <p class="muted">O acervo fica na memória desta sessão. Fechar ou recarregar a página descarta os dados não exportados.</p>
+    </section>
+    @if (!string.IsNullOrEmpty(error)) { <p class="error" role="alert">@error</p> }
+    @if (corpus is not null)
+    {
+        <section class="card">
+            <h2>@corpus.Title</h2>
+            <div class="stats"><span><strong>@corpus.Documents.Count</strong> materiais</span><span><strong>@corpus.PageCount</strong> páginas</span><span><strong>@corpus.CharacterCount.ToString("N0")</strong> caracteres</span></div>
+            <details><summary>Materiais e cobertura</summary>
+                <ul>@foreach (var d in corpus.Documents) { <li>@d.Id · @d.Name · @d.Pages.Count páginas</li> }</ul>
+                @foreach (var warning in corpus.Warnings) { <p class="muted">@warning</p> }
+            </details>
+        </section>
+        <section class="card">
+            <h2>2. Gere o resumo geral</h2>
+            <p>Todo o texto importado será enviado ao Gemini somente ao clicar abaixo. Modelo configurado: <strong>@Gemini.Model</strong>.</p>
+            @if (!Gemini.Configured) { <p class="notice">A integração está pronta, mas falta configurar a chave local e confirmar um projeto sem faturamento. Consulte o README. Não cole sua chave no chat.</p> }
+            <button disabled="@(busy || !Gemini.Configured)" @onclick="Generate">@(busy ? "Gerando resumo…" : "Gerar resumo geral")</button>
+            @if (busy) { <button class="secondary" @onclick="Cancel">Cancelar</button><p role="status">Aguardando o Gemini. Mantenha esta aba aberta.</p> }
+            <p class="muted">Sem troca automática de modelo e sem repetição ao atingir cota. As cotas dependem do projeto Google; a aplicação não consegue verificar seu faturamento.</p>
+        </section>
+    }
+    @if (result is not null)
+    {
+        <section class="card result">
+            <span class="badge">RESUMO GERADO</span><h2>@result.Summary.Title</h2>
+            <p>@result.DocumentCount materiais enviados · @result.PageCount páginas · referências verificadas estruturalmente.</p>
+            <p class="muted">A existência das fontes foi validada; isso não garante que toda afirmação esteja correta ou que cada página tenha sido abordada. Confira os trechos abaixo.</p>
+            <a class="download" href="@ExportUrl" download="cola-ai-resumo.json">Salvar resumo e referências</a>
+            @foreach (var topic in result.Summary.Sections)
+            {
+                <article><h3>@topic.Title</h3><p class="prose">@topic.Text</p>
+                @foreach (var citation in topic.References)
+                {
+                    var doc = corpus!.Documents.Single(d => d.Id == citation.DocumentId);
+                    <details class="source"><summary>@doc.Name · página @citation.Page</summary><pre>@doc.Pages.Single(p => p.Page == citation.Page).Text</pre></details>
+                }
+                </article>
+            }
+        </section>
+    }
+    <footer>Manoel Rodrigues e Uilsom Cardoso · Projeto acadêmico de uso próprio</footer>
+</main>
+
+@code {
+    private Corpus? corpus;
+    private SummaryResult? result;
+    private string? error;
+    private bool busy;
+    private CancellationTokenSource? cancellation;
+    private string ExportUrl => "data:application/json;charset=utf-8;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+        JsonSerializer.Serialize(new { result, documents = corpus!.Documents.Select(d => new { d.Id, d.Name }), coverage = corpus.Coverage }, CorpusReader.JsonOptions)));
+    private async Task Import(InputFileChangeEventArgs e)
+    {
+        error = null; result = null; corpus = null; busy = true;
+        try { await using var stream = e.File.OpenReadStream(CorpusReader.MaxUploadBytes); corpus = await Reader.ReadAsync(stream); }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or JsonException) { error = ex.Message; }
+        finally { busy = false; }
+    }
+    private async Task Generate()
+    {
+        if (corpus is null || busy) return;
+        error = null; result = null; busy = true;
+        cancellation?.Dispose(); cancellation = new CancellationTokenSource();
+        try { result = await Gemini.GenerateAsync(corpus, cancellation.Token); }
+        catch (OperationCanceledException) { error = cancellation.IsCancellationRequested ? "Geração cancelada." : "O tempo de resposta foi excedido. Nenhuma nova tentativa foi feita."; }
+        catch (HttpRequestException) { error = "Não foi possível conectar ao Gemini. Confira a conexão. Nenhuma nova tentativa foi feita."; }
+        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or JsonException) { error = ex.Message; }
+        finally { busy = false; }
+    }
+    private void Cancel() => cancellation?.Cancel();
+    public void Dispose() { cancellation?.Cancel(); cancellation?.Dispose(); }
+}

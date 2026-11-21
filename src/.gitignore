@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+**/appsettings.Local.json
+.env
+.env.*
+!.env.example
+.DS_Store
+**/._*
