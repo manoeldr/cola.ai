@@ -29,3 +29,7 @@
 **/.DS_Store
 ._*
 **/._*
+# Configuração local de agentes e capturas de desenvolvimento
+**/.claude/
+**/tela*.png
+**/ui-check.cjs
