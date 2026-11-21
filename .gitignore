@@ -1,0 +1,31 @@
+# Dados pessoais e credenciais
+**/App_Data/
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.key
+**/*.pem
+**/*.p12
+.env
+.env.*
+**/.env
+**/.env.*
+**/appsettings.Local.json
+# Dependências e arquivos gerados
+**/node_modules/
+**/.expo/
+**/bin/
+**/obj/
+**/TestResults/
+**/dist/
+**/web-build/
+**/*.tsbuildinfo
+/mobile/ios/
+/mobile/android/
+/tmp/
+/output/
+# Metadados do macOS / SSD exFAT
+.DS_Store
+**/.DS_Store
+._*
+**/._*

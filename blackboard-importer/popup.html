@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="pt-BR"><meta charset="utf-8"><title>Cola.ai</title>
+<style>
+body{font:14px system-ui;background:#f4f7fb;color:#152b46;width:390px;margin:0;padding:22px;box-sizing:border-box}h1{margin:0;color:#087f8c}p{line-height:1.5}button{padding:11px 14px;border:0;border-radius:8px;background:#087f8c;color:white;cursor:pointer}button:disabled{opacity:.5;cursor:default}#status{white-space:pre-wrap}#result{max-height:330px;overflow:auto}li{margin-bottom:9px;overflow-wrap:anywhere}.tag{font-size:12px;color:#526477}a{color:#087f8c}footer{margin-top:18px;font-size:12px;color:#526477}
+</style>
+<h1>Cola.ai <small style="font-size:12px">0.4.0</small></h1><p>Abra uma disciplina ou sua lista de cursos no Blackboard. Expanda as pastas que deseja analisar.</p>
+<button id="scan">Analisar página aberta</button> <button id="export" disabled>Salvar JSON</button>
+<p><button id="verify" disabled>Verificar acesso ao PDF</button></p>
+<p><button id="download" disabled>Baixar PDF completo</button></p>
+<p><button id="extract" disabled>Extrair texto por página</button></p>
+<p><button id="crawl">Percorrer pastas da disciplina</button></p>
+<p><button id="batch">Importar lote de um diagnóstico</button></p>
+<p id="status" role="status" aria-live="polite"></p><section id="result"></section>
+<footer>Teste local: não envia dados, não acessa senhas e salva o PDF apenas quando você clica em Baixar PDF completo. A verificação solicita apenas o início do PDF ao Blackboard. Detecta links e títulos carregados na página; não sincroniza o curso inteiro. Fechar este painel apaga o resultado.</footer>
+<script src="extractor.js"></script><script src="pdf-download.js"></script><script src="popup.js"></script></html>

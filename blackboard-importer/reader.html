@@ -1,0 +1,9 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Cola.ai — Texto do material</title>
+<style>body{font:16px system-ui;color:#152b46;background:#f4f7fb;max-width:900px;margin:40px auto;padding:0 24px}h1{color:#087f8c}button{padding:12px;margin:8px 8px 8px 0;border:0;border-radius:8px;background:#087f8c;color:white}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:white;padding:20px;line-height:1.6}input{margin:12px 0}#status{white-space:pre-wrap}</style>
+<h1>Cola.ai · Importação de texto · 0.2.0</h1>
+<p>Processamento local. Mantenha esta aba aberta. O texto não é enviado à IA ou a servidores.</p>
+<p id="status" role="status" aria-live="polite">Preparando…</p>
+<button id="save" disabled>Salvar material JSON</button><button id="txt" disabled>Salvar texto</button>
+<details><summary>Testar com um PDF já salvo (até 25 MB)</summary><input id="file" type="file" accept="application/pdf,.pdf"></details>
+<h2>Prévia por página</h2><div id="preview"></div>
+<script src="pdf-download.js"></script><script type="module" src="reader.mjs"></script></html>

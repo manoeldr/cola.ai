@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Cola.ai — Importador Blackboard (teste)",
+  "version": "0.4.0",
+  "description": "Inspeciona disciplinas e links visíveis na página aberta, mediante clique do aluno.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Testar importação Cola.ai"
+  },
+  "host_permissions": [
+    "https://bb.cruzeirodosulvirtual.com.br/*",
+    "https://basic-doc-viewer.us.api.blackboard.com/*",
+    "https://learn-us-east-1-prod-fleet02-xythos.content.blackboardcdn.com/*",
+    "https://alt-5d152e0e8981d.blackboard.com/*"
+  ]
+}

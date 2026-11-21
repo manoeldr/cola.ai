@@ -1,0 +1,8 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Cola.ai · Importação em lote</title>
+<style>body{font:16px system-ui;max-width:950px;margin:40px auto;padding:20px;color:#152b46}button{padding:12px;margin:8px;background:#087f8c;color:white;border:0;border-radius:8px}li{margin:12px 0}#status{white-space:pre-wrap}</style>
+<h1>Importação de disciplina · 0.4.0</h1><p>Processamento local. Mantém uma aba auxiliar do Blackboard e processa um arquivo por vez. Não feche esta aba durante a importação. Avaliações não são abertas.</p>
+<label>Diagnóstico da varredura: <input id="manifest" type="file" accept=".json,application/json"></label>
+<button id="start" disabled>Importar arquivos encontrados</button><button id="stop" disabled>Parar</button><button id="save" disabled>Salvar acervo e relatório</button>
+<p id="status" role="status">Escolha o JSON da varredura ou abra esta tela pelo botão da varredura.</p><ul id="items"></ul>
+<p>Limites: 100 arquivos, 25 MB por PDF, 2 minutos por arquivo. O relatório mantém os itens não processados. Arquivos não PDF e páginas sem texto são sinalizados. Não há OCR nem resumo de IA nesta versão. Fechar esta aba descarta resultados não exportados e pode deixar a aba auxiliar aberta.</p>
+<script src="pdf-download.js"></script><script type="module" src="batch.mjs"></script></html>
