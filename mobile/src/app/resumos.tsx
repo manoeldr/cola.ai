@@ -7,6 +7,7 @@ import { colors } from '../ui/theme';
 import * as SecureStore from 'expo-secure-store';
 import { listLibrary,readCorpus,saveStudy,shortCourse } from '../library/local';
 import { selection } from '../library/catalog';
+import { exportSummary } from '../export/exportSummary';
 import { ApiError, connection, request, type Connection, type CourseInfo, type Job, type Summary } from '../study/api';
 const CONFIG_KEY='cola-ai-mac-connection';
 type Saved={course:CourseInfo|null;job:Job|null;result:Summary|null;sourceUrl?:string};
@@ -113,6 +114,7 @@ export default function Resumos(){
     <Text style={styles.title}>{result?result.summary.title:selectedTitle?shortCourse(selectedTitle):'Sua disciplina,\numa revisão.'}</Text>
     <Text style={styles.note}>{result?`${result.documentCount} materiais · ${result.pageCount} páginas · disponível offline`:'Um resumo dos materiais importados, com fontes para consultar quando precisar.'}</Text>
    </View>
+   {result&&<Pressable accessibilityRole="button" disabled={busy||generating} style={[styles.secondary,(busy||generating)&&styles.disabled]} onPress={()=>void perform(async()=>{setStatus('Preparando o PDF…');await exportSummary(result,shortCourse(selectedTitle||course?.title||result.summary.title),docs);setStatus('PDF pronto para salvar ou compartilhar.');})}><Text style={styles.link}>Exportar resumo em PDF</Text></Pressable>}
    {(busy||!result)&&<Text accessibilityLiveRegion="polite" style={styles.note}>{status}</Text>}
    {!!error&&<Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
    {busy&&<ActivityIndicator color={colors.blue}/>}
