@@ -20,3 +20,8 @@ Esses números identificavam rodadas de teste do importador durante o desenvolvi
 Entre as correções preservadas estão a abertura de novas janelas do portal, o contexto da disciplina na navegação direta, a leitura da página real para evitar URLs desatualizadas do iOS, a separação entre acervos, a biblioteca de resumos e os links diretos de Engenharia de Software.
 
 Os documentos em `docs/` incluem propostas históricas. Ideias como outros serviços de nuvem, simulados e gamificação não devem ser confundidas com funcionalidades já implementadas. O estado atual está no README principal.
+
+
+## Incremento: mapas mentais
+
+Mapa visual independente do PDF, gerado a partir do resumo já salvo. A primeira geração passa pelo Gemini no Mac; chamadas seguintes reutilizam o mapa em cache. A validação limita temas e tópicos, rejeita parágrafos e só aceita referências presentes no resumo original. O aplicativo mantém o mapa por disciplina e versão do resumo, oferece zoom, fontes em uma lista opcional e compartilhamento de SVG sem incorporar o desenho ao PDF.

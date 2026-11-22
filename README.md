@@ -13,6 +13,7 @@ O aplicativo importa materiais do Blackboard pelo iPhone, extrai o texto dos PDF
 - Indexação SQLite/FTS5 e geração hierárquica de resumos pelo Gemini, com cache e referências verificadas.
 - Retomada dos resumos individuais concluídos quando há interrupção de cota, sem repetição automática ou troca de modelo.
 - Exportação do resumo salvo para PDF A4, com texto justificado, títulos e fontes.
+- Mapa mental independente do PDF, com temas e tópicos curtos, zoom, consulta offline e exportação SVG.
 - Interface azul com câmera em destaque e navegação inferior flutuante.
 - Captura e histórico local de fotos no iPhone.
 

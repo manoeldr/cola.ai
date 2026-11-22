@@ -49,6 +49,15 @@ public static class MobileEndpoints
             try{var job=jobs.Start(corpus);return Results.Accepted($"/api/mobile/jobs/{job.Id}",job);}
             catch(InvalidOperationException e){return Results.Json(new{error=e.Message},statusCode:409);}
         });
+        api.MapGet("/courses/{key}/mind-map",(string key,LocalLibrary library,StudyService study)=>library.Load(key) is {} c&&study.SavedMindMap(c) is {} map?Results.Ok(map):Results.NotFound());
+        api.MapPost("/courses/{key}/mind-map",async(string key,LocalLibrary library,StudyService study,CancellationToken ct)=>
+        {
+            var c=library.Load(key);if(c is null)return Results.NotFound();
+            try{return Results.Ok(await study.MindMapAsync(c,ct));}
+            catch(Exception e)when(e is InvalidDataException or InvalidOperationException){return Results.Json(new{error=e.Message},statusCode:409);}
+            catch(HttpRequestException){return Results.Json(new{error="Falha de conexão com o Gemini. Nenhuma nova tentativa foi feita."},statusCode:502);}
+            catch(OperationCanceledException){return Results.Json(new{error="Geração do mapa cancelada ou tempo de espera excedido. Nenhuma nova tentativa foi feita."},statusCode:408);}
+        });
         api.MapGet("/jobs/{id}",(string id,MobileSummaryJobs jobs)=>jobs.Get(id) is {} job?Results.Ok(job):Results.NotFound());
         api.MapPost("/jobs/{id}/cancel",(string id,MobileSummaryJobs jobs)=>jobs.Cancel(id)?Results.Ok(new{cancelRequested=true}):Results.NotFound());
     }

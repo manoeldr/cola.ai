@@ -98,6 +98,28 @@ public sealed class MobileApiTests:IAsyncLifetime
         using var wrong=new HttpRequestMessage(HttpMethod.Get,"/api/mobile/health");wrong.Headers.Host="untrusted.example";
         Assert.Equal(HttpStatusCode.BadRequest,(await client.SendAsync(wrong)).StatusCode);
     }
+    [Fact]public async Task MindMapRequiresReadySummaryWithoutCallingGemini()
+    {
+        var c=await Import();var key=c.GetProperty("key").GetString();
+        Assert.Equal(HttpStatusCode.Conflict,(await client.PostAsync($"/api/mobile/courses/{key}/mind-map",null)).StatusCode);Assert.Equal(0,fake.Calls);
+    }
+    [Fact]public async Task MindMapUsesOnlySummaryAndReusesCache()
+    {
+        var c=await Import();var key=c.GetProperty("key").GetString()!;await Generate(key);
+        var map=await Json(client.PostAsync($"/api/mobile/courses/{key}/mind-map",null));
+        Assert.Equal("Overfitting",map.GetProperty("map").GetProperty("themes")[0].GetProperty("topics")[0].GetProperty("label").GetString());
+        Assert.Equal(3,fake.Calls);Assert.Contains("summary",fake.MapInput);Assert.DoesNotContain("redes neurais",fake.MapInput);Assert.DoesNotContain("documents",fake.MapInput);
+        await Json(client.PostAsync($"/api/mobile/courses/{key}/mind-map",null));await Json(client.GetAsync($"/api/mobile/courses/{key}/mind-map"));Assert.Equal(3,fake.Calls);
+        await Json(client.PostAsJsonAsync("/api/mobile/courses/import",Acervo("Material atualizado sobre regularização.")));
+        Assert.Equal(HttpStatusCode.NotFound,(await client.GetAsync($"/api/mobile/courses/{key}/mind-map")).StatusCode);
+    }
+    [Fact]public async Task MindMapQuotaFailureDoesNotRetryOrSavePartialMap()
+    {
+        var c=await Import();var key=c.GetProperty("key").GetString()!;await Generate(key);fake.FailAt=3;
+        using var failed=await client.PostAsync($"/api/mobile/courses/{key}/mind-map",null);Assert.Equal(HttpStatusCode.Conflict,failed.StatusCode);Assert.Contains("429",await failed.Content.ReadAsStringAsync());Assert.Equal(3,fake.Calls);
+        Assert.Equal(HttpStatusCode.NotFound,(await client.GetAsync($"/api/mobile/courses/{key}/mind-map")).StatusCode);
+        fake.FailAt=0;await Json(client.PostAsync($"/api/mobile/courses/{key}/mind-map",null));Assert.Equal(4,fake.Calls);
+    }
     [Theory][InlineData("0.0.0.0")][InlineData("8.8.8.8")][InlineData("127.0.0.1")]
     public void LanModeRejectsNonPrivateBindAddress(string host)=>Assert.Throws<InvalidOperationException>(()=>new MobileAccess(true,host,Token));
     private Task<JsonElement> Import()=>Json(client.PostAsJsonAsync("/api/mobile/courses/import",Acervo()));
@@ -110,15 +132,19 @@ public sealed class MobileApiTests:IAsyncLifetime
     private static async Task<JsonElement> Json(Task<HttpResponseMessage> pending){using var r=await pending;r.EnsureSuccessStatusCode();using var d=JsonDocument.Parse(await r.Content.ReadAsStringAsync());return d.RootElement.Clone();}
     private sealed class FakeGemini:HttpMessageHandler
     {
-        public int Calls,FailAt;public bool Block;
+        public int Calls,FailAt;public bool Block;public string MapInput="";
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
         {
             Calls++;if(Block)await Task.Delay(Timeout.Infinite,ct);if(Calls==FailAt)return new(HttpStatusCode.TooManyRequests);
             using var body=JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
             using var input=JsonDocument.Parse(body.RootElement.GetProperty("contents")[0].GetProperty("parts")[0].GetProperty("text").GetString()!);
-            var id=input.RootElement.TryGetProperty("documents",out var docs)?docs[0].GetProperty("documentId").GetString():input.RootElement.GetProperty("documentSummaries")[0].GetProperty("sections")[0].GetProperty("references")[0].GetProperty("documentId").GetString();
-            var summary=new {title="Resumo teste",sections=new[]{new {title="Conceitos",text="Overfitting deve ser reduzido para melhorar a generalização.",references=new[]{new {documentId=id,page=1}}}}};
-            var response=new {candidates=new[]{new {finishReason="STOP",content=new {parts=new[]{new {text=JsonSerializer.Serialize(summary)}}}}},usageMetadata=new {totalTokenCount=10}};
+            var mapInput=input.RootElement.TryGetProperty("summary",out var source);
+            if(mapInput)MapInput=input.RootElement.GetRawText();
+            var id=mapInput?source.GetProperty("sections")[0].GetProperty("references")[0].GetProperty("documentId").GetString():input.RootElement.TryGetProperty("documents",out var docs)?docs[0].GetProperty("documentId").GetString():input.RootElement.GetProperty("documentSummaries")[0].GetProperty("sections")[0].GetProperty("references")[0].GetProperty("documentId").GetString();
+            object output=mapInput
+                ?new {title="IA",themes=new[]{new {label="Generalização",topics=new[]{new {label="Overfitting",references=new[]{new {documentId=id,page=1}}}}}}}
+                :new {title="Resumo teste",sections=new[]{new {title="Conceitos",text="Overfitting deve ser reduzido para melhorar a generalização.",references=new[]{new {documentId=id,page=1}}}}};
+            var response=new {candidates=new[]{new {finishReason="STOP",content=new {parts=new[]{new {text=JsonSerializer.Serialize(output)}}}}},usageMetadata=new {totalTokenCount=10}};
             return new(HttpStatusCode.OK){Content=JsonContent.Create(response)};
         }
     }

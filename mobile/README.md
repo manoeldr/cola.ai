@@ -106,3 +106,14 @@ Depois de gerar ou abrir uma revisão salva, **Exportar resumo em PDF** cria um 
 O HTML é gerado a partir de texto escapado, sem scripts, imagens remotas ou carregamento de fontes pela internet. Não inclui chave Gemini nem código de acesso do Mac. Fontes sem identificação são rejeitadas, em vez de substituídas por atribuições inventadas. A cópia final fica no cache do app com nome da disciplina; salve em Arquivos para mantê-la fora do cache. `expo-print` está incluído no Expo Go SDK 58; reinicie o Expo com `npx expo start --clear` após atualizar a dependência.
 
 Testes cobrem justificação/A4, preservação das citações e seções, bloqueio de HTML injetado e nomes de arquivo seguros. O compartilhamento e a paginação final do gerador iOS ainda precisam ser confirmados no iPhone.
+
+
+## Mapas mentais
+
+Na revisão de uma disciplina com resumo pronto, **Mapa mental da disciplina** abre uma tela independente do PDF. Toque em **Gerar mapa mental** para organizar o resumo em temas e conceitos curtos. A primeira geração usa o Gemini pelo Mac; só o resumo salvo é enviado, sem reler os PDFs. O modelo e as regras de cota permanecem os mesmos, sem retries ou fallback.
+
+O mapa contém até oito temas, com até cinco tópicos por tema, sem parágrafos. Há controles de zoom, rolagem, fontes em uma lista opcional e **Salvar mapa separado (SVG)**. O SVG é uma imagem vetorial que pode ser aberta e ampliada sem perder nitidez; não é incorporado ao PDF do resumo.
+
+Os mapas são salvos por disciplina em `cola-ai-mapas` no iPhone e em cache no SQLite do Mac. A versão do resumo e o modelo fazem parte da identificação do mapa: alterar o acervo/resumo não reaproveita um mapa antigo como se fosse atual. Depois de salvo no iPhone, o mapa pode ser consultado e compartilhado offline.
+
+Para habilitar as novas rotas, reinicie o backend no mesmo Terminal que já contém a chave Gemini (`zsh scripts/start-mobile-backend.sh`, a partir da raiz do projeto) e recarregue o Expo. O botão fica junto da exportação do resumo em PDF. Os testes usam um transporte de IA simulado; o resultado real e a interação de zoom/compartilhamento ainda precisam de validação no iPhone.

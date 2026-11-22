@@ -1,6 +1,6 @@
 using ColaAI.Web.Models;
 namespace ColaAI.Web.Services;
-public sealed class StudyService(LocalLibrary library, GeminiSummaryService gemini)
+public sealed partial class StudyService(LocalLibrary library, GeminiSummaryService gemini)
 {
     // Bump when prompts or extraction policy changes. Model is also part of every cache key.
     public const string PipelineVersion="hierarchical-v1";

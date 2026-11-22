@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { router,useLocalSearchParams } from 'expo-router';
 import { Screen } from '../ui/Screen';
 import { Icon } from '../ui/Icon';
 import { colors } from '../ui/theme';
@@ -115,6 +115,7 @@ export default function Resumos(){
     <Text style={styles.note}>{result?`${result.documentCount} materiais · ${result.pageCount} páginas · disponível offline`:'Um resumo dos materiais importados, com fontes para consultar quando precisar.'}</Text>
    </View>
    {result&&<Pressable accessibilityRole="button" disabled={busy||generating} style={[styles.secondary,(busy||generating)&&styles.disabled]} onPress={()=>void perform(async()=>{setStatus('Preparando o PDF…');await exportSummary(result,shortCourse(selectedTitle||course?.title||result.summary.title),docs);setStatus('PDF pronto para salvar ou compartilhar.');})}><Text style={styles.link}>Exportar resumo em PDF</Text></Pressable>}
+   {result&&course&&<Pressable style={styles.secondary} onPress={()=>router.push({pathname:'/mapa',params:selectedSource?{source:selectedSource}:{courseKey:course.key}})}><Text style={styles.link}>Mapa mental da disciplina</Text></Pressable>}
    {(busy||!result)&&<Text accessibilityLiveRegion="polite" style={styles.note}>{status}</Text>}
    {!!error&&<Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
    {busy&&<ActivityIndicator color={colors.blue}/>}

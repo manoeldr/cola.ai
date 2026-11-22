@@ -12,9 +12,9 @@ export function connection(url:string,token:string):Connection{
  return {url:u.origin,token:token.trim()};
 }
 export class ApiError extends Error { constructor(message:string,public status:number){super(message);} }
-export async function request<T>(config:Connection,path:string,method='GET',body?:string,signal?:AbortSignal):Promise<T>{
+export async function request<T>(config:Connection,path:string,method='GET',body?:string,signal?:AbortSignal,timeoutMs=30000):Promise<T>{
  const controller=new AbortController(),cancel=()=>controller.abort();signal?.addEventListener('abort',cancel,{once:true});
- const timer=setTimeout(cancel,30000);
+ const timer=setTimeout(cancel,timeoutMs);
  try{
   if(signal?.aborted)throw Error('Operação interrompida.');
   const response=await fetch(config.url+'/api/mobile'+path,{method,headers:{Authorization:'Bearer '+config.token,...(body?{'Content-Type':'application/json'}:{})},body,signal:controller.signal,credentials:'omit',redirect:'error'});
