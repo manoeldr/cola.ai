@@ -112,7 +112,7 @@ Testes cobrem justificação/A4, preservação das citações e seções, bloque
 
 Na revisão de uma disciplina com resumo pronto, **Mapa mental da disciplina** abre uma tela independente do PDF. Toque em **Gerar mapa mental** para organizar o resumo em temas e conceitos curtos. A primeira geração usa o Gemini pelo Mac; só o resumo salvo é enviado, sem reler os PDFs. O modelo e as regras de cota permanecem os mesmos, sem retries ou fallback.
 
-O mapa contém até oito temas, com até cinco tópicos por tema, sem parágrafos. Há controles de zoom, rolagem, fontes em uma lista opcional e **Salvar mapa separado (SVG)**. O SVG é uma imagem vetorial que pode ser aberta e ampliada sem perder nitidez; não é incorporado ao PDF do resumo.
+O mapa contém até oito temas, com até cinco tópicos por tema. Cada tópico tem um título curto e uma frase explicativa (até 18 palavras/100 caracteres). Ao tocar no tópico, um painel abre uma explicação de uma ou duas frases (até 65 palavras/360 caracteres) sobre o que é e para que serve, junto das fontes e páginas. A lista opcional de tópicos também permite abrir o painel. Há controles de zoom, rolagem e **Salvar mapa separado (SVG)**. O SVG inclui a frase explicativa de cada tópico. É uma imagem vetorial que pode ser aberta e ampliada sem perder nitidez; não é incorporado ao PDF do resumo.
 
 Os mapas são salvos por disciplina em `cola-ai-mapas` no iPhone e em cache no SQLite do Mac. A versão do resumo e o modelo fazem parte da identificação do mapa: alterar o acervo/resumo não reaproveita um mapa antigo como se fosse atual. Depois de salvo no iPhone, o mapa pode ser consultado e compartilhado offline.
 
@@ -127,3 +127,5 @@ A chave fica no SecureStore do iPhone e somente na memória do backend. Após re
 O envio usa RSA-OAEP/SHA-256 com aleatoriedade nativa e identifica o destinatário pelo SHA-256 da chave pública, conferido com o identificador copiado do Mac. Isso protege o conteúdo da chave mesmo com HTTP local; não transforma toda a conexão em HTTPS. A identidade RSA persiste em `App_Data/settings-rsa.pem` (ignorado pelo Git); a chave Gemini não é gravada no Mac. Se apagar esse arquivo, confira e atualize o identificador no aplicativo.
 
 Para receber esta atualização, reinicie o backend e o Expo (`npx expo start --clear` dentro de `mobile`). Não é necessário criar um novo build nativo: Expo Crypto e SecureStore estão disponíveis no Expo Go.
+
+Mapas anteriores sem explicações são preservados no arquivo até a nova geração, mas não são apresentados como mapas atualizados. O cache do backend usa `mindmap:v2`; toque em **Gerar mapa mental** após reiniciar o backend atualizado para criar o novo formato, reaproveitando o resumo existente. A geração continua explícita, sem novas tentativas automáticas.

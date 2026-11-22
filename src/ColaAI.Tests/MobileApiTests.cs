@@ -123,10 +123,25 @@ public sealed class MobileApiTests:IAsyncLifetime
         var c=await Import();var key=c.GetProperty("key").GetString()!;await Generate(key);
         var map=await Json(client.PostAsync($"/api/mobile/courses/{key}/mind-map",null));
         Assert.Equal("Overfitting",map.GetProperty("map").GetProperty("themes")[0].GetProperty("topics")[0].GetProperty("label").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(map.GetProperty("map").GetProperty("themes")[0].GetProperty("topics")[0].GetProperty("brief").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(map.GetProperty("map").GetProperty("themes")[0].GetProperty("topics")[0].GetProperty("explanation").GetString()));
         Assert.Equal(3,fake.Calls);Assert.Contains("summary",fake.MapInput);Assert.DoesNotContain("redes neurais",fake.MapInput);Assert.DoesNotContain("documents",fake.MapInput);
         await Json(client.PostAsync($"/api/mobile/courses/{key}/mind-map",null));await Json(client.GetAsync($"/api/mobile/courses/{key}/mind-map"));Assert.Equal(3,fake.Calls);
         await Json(client.PostAsJsonAsync("/api/mobile/courses/import",Acervo("Material atualizado sobre regularização.")));
         Assert.Equal(HttpStatusCode.NotFound,(await client.GetAsync($"/api/mobile/courses/{key}/mind-map")).StatusCode);
+    }
+    [Fact]public async Task LegacyMindMapCacheIsNotReturnedAsAnExplainedMap()
+    {
+        var c=await Import();var key=c.GetProperty("key").GetString()!;await Generate(key);
+        var library=app.Services.GetRequiredService<LocalLibrary>();var corpus=library.Load(key)!;
+        var source=app.Services.GetRequiredService<StudyService>().SavedSummary(corpus)!;
+        var model=app.Services.GetRequiredService<GeminiSummaryService>().Model;
+        var oldKey=$"mindmap:v1:{model}:{key}:{LocalLibrary.Hash(JsonSerializer.Serialize(new{source.Summary,source.CreatedAt},CorpusReader.JsonOptions))}";
+        var legacy=new ColaAI.Web.Models.GeneratedMindMap("IA",[new("Generalização",[new("Overfitting",[new(corpus.Documents[0].Id,1)])])]);
+        library.Cache(oldKey,new ColaAI.Web.Models.MindMapResult(legacy,key,model,DateTimeOffset.UtcNow,source.CreatedAt));
+        Assert.Equal(HttpStatusCode.NotFound,(await client.GetAsync($"/api/mobile/courses/{key}/mind-map")).StatusCode);
+        Assert.Equal(2,fake.Calls);
+        await Json(client.PostAsync($"/api/mobile/courses/{key}/mind-map",null));Assert.Equal(3,fake.Calls);
     }
     [Fact]public async Task MindMapQuotaFailureDoesNotRetryOrSavePartialMap()
     {
@@ -157,7 +172,7 @@ public sealed class MobileApiTests:IAsyncLifetime
             if(mapInput)MapInput=input.RootElement.GetRawText();
             var id=mapInput?source.GetProperty("sections")[0].GetProperty("references")[0].GetProperty("documentId").GetString():input.RootElement.TryGetProperty("documents",out var docs)?docs[0].GetProperty("documentId").GetString():input.RootElement.GetProperty("documentSummaries")[0].GetProperty("sections")[0].GetProperty("references")[0].GetProperty("documentId").GetString();
             object output=mapInput
-                ?new {title="IA",themes=new[]{new {label="Generalização",topics=new[]{new {label="Overfitting",references=new[]{new {documentId=id,page=1}}}}}}}
+                ?new {title="IA",themes=new[]{new {label="Generalização",topics=new[]{new {label="Overfitting",brief="Memorização excessiva dos exemplos de treino.",explanation="O modelo memoriza o treino e perde capacidade de generalizar para novos exemplos.",references=new[]{new {documentId=id,page=1}}}}}}}
                 :new {title="Resumo teste",sections=new[]{new {title="Conceitos",text="Overfitting deve ser reduzido para melhorar a generalização.",references=new[]{new {documentId=id,page=1}}}}};
             var response=new {candidates=new[]{new {finishReason="STOP",content=new {parts=new[]{new {text=JsonSerializer.Serialize(output)}}}}},usageMetadata=new {totalTokenCount=10}};
             return new(HttpStatusCode.OK){Content=JsonContent.Create(response)};

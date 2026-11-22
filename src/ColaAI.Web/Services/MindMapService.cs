@@ -26,6 +26,8 @@ public static class MindMapRules
             {
                 if(topic is null)throw new InvalidDataException("Tópico inválido.");
                 Label(topic.Label,42,6);
+                Label(topic.Brief,100,18);
+                Label(topic.Explanation,360,65);
                 if(!labels.Add(topic.Label.Trim()))throw new InvalidDataException("Tópico repetido no mesmo tema.");
                 if(topic.References is null||topic.References.Count is <1 or >6||topic.References.Any(r=>r is null||!allowed.Contains((r.DocumentId,r.Page))))
                     throw new InvalidDataException("O mapa citou uma fonte ausente do resumo original.");
@@ -40,7 +42,7 @@ public sealed partial class GeminiSummaryService
         var input=JsonSerializer.Serialize(new{course=corpus.Title,summary=source.Summary},CorpusReader.JsonOptions);
         if(input.Length>MaxCharacters)throw new InvalidDataException("O resumo é grande demais para gerar o mapa em uma chamada. Nenhum conteúdo foi cortado.");
         using var schema=JsonDocument.Parse("""
-        {"type":"object","properties":{"title":{"type":"string"},"themes":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string"},"topics":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string"},"references":{"type":"array","items":{"type":"object","properties":{"documentId":{"type":"string"},"page":{"type":"integer"}},"required":["documentId","page"]}}},"required":["label","references"]}}},"required":["label","topics"]}}},"required":["title","themes"]}
+        {"type":"object","properties":{"title":{"type":"string"},"themes":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string"},"topics":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string"},"brief":{"type":"string"},"explanation":{"type":"string"},"references":{"type":"array","items":{"type":"object","properties":{"documentId":{"type":"string"},"page":{"type":"integer"}},"required":["documentId","page"]}}},"required":["label","brief","explanation","references"]}}},"required":["label","topics"]}}},"required":["title","themes"]}
         """);
         var reply=await RequestJsonAsync([new{text=input}],"""
         Crie um mapa mental de estudo em português usando SOMENTE o resumo recebido.
@@ -49,10 +51,15 @@ public sealed partial class GeminiSummaryService
         O título central tem até 8 palavras e 64 caracteres. Cada tema tem até 5 palavras e
         48 caracteres. Cada tema tem de 1 a 5 tópicos, preferencialmente 2 a 4. Cada tópico
         tem no máximo 6 palavras e 42 caracteres. Use conceitos e palavras-chave; NÃO escreva
-        frases explicativas, parágrafos, listas dentro dos rótulos, Markdown nem HTML.
+        frases explicativas ou listas DENTRO DOS RÓTULOS. Não use Markdown nem HTML.
+        Para CADA tópico, inclua brief: uma frase curta de até 18 palavras e 100 caracteres,
+        que explique a ideia principal. Inclua explanation: uma ou duas frases de até 65 palavras
+        e 360 caracteres explicando o que é e para que serve, com distinções úteis quando
+        houver conceitos relacionados (ex.: verificação e validação). Esses textos são campos
+        separados do rótulo. Use apenas informações sustentadas pelo resumo e suas fontes.
         Não abrevie removendo pedaços de palavras para caber. Não invente assuntos ausentes.
         O mapa é uma visão geral para revisão, não uma reprodução integral do resumo.
-        Retorne JSON title, themes:[{label,topics:[{label,references:[{documentId,page}]}]}].
+        Retorne JSON title, themes:[{label,topics:[{label,brief,explanation,references:[{documentId,page}]}]}].
         As referências ficam fora dos rótulos e devem ser copiadas das referências do resumo
         que sustentam cada tópico. Não invente IDs nem páginas; não adicione temas duplicados.
         """,schema.RootElement,ct);
@@ -65,7 +72,7 @@ public sealed partial class GeminiSummaryService
 }
 public sealed partial class StudyService
 {
-    private string MapKey(Corpus corpus,SummaryResult source)=>$"mindmap:v1:{gemini.Model}:{LocalLibrary.CourseKey(corpus)}:{LocalLibrary.Hash(JsonSerializer.Serialize(new{source.Summary,source.CreatedAt},CorpusReader.JsonOptions))}";
+    private string MapKey(Corpus corpus,SummaryResult source)=>$"mindmap:v2:{gemini.Model}:{LocalLibrary.CourseKey(corpus)}:{LocalLibrary.Hash(JsonSerializer.Serialize(new{source.Summary,source.CreatedAt},CorpusReader.JsonOptions))}";
     public MindMapResult? SavedMindMap(Corpus corpus)=>SavedSummary(corpus) is {} summary?library.Cached<MindMapResult>(MapKey(corpus,summary)):null;
     public async Task<MindMapResult> MindMapAsync(Corpus corpus,CancellationToken ct)
     {
