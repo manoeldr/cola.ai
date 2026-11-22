@@ -11,11 +11,12 @@ public sealed class GeminiOptions
     public string Model { get; set; } = "gemini-3.5-flash-lite";
     public bool FreeTierProjectConfirmed { get; set; }
 }
-public sealed partial class GeminiSummaryService(HttpClient http, Microsoft.Extensions.Options.IOptions<GeminiOptions> options)
+public sealed partial class GeminiSummaryService(HttpClient http, Microsoft.Extensions.Options.IOptions<GeminiOptions> options, GeminiKeyStore? keyStore=null)
 {
     public const int MaxCharacters = 500_000;
     public string Model => options.Value.Model;
-    public bool Configured => !string.IsNullOrWhiteSpace(options.Value.ApiKey) && options.Value.FreeTierProjectConfirmed;
+    private RuntimeGeminiKey Credentials=>keyStore?.Current??new(options.Value.ApiKey,options.Value.FreeTierProjectConfirmed);
+    public bool Configured => !string.IsNullOrWhiteSpace(Credentials.ApiKey) && Credentials.FreeTierProjectConfirmed;
     public static string BuildInput(Corpus corpus)
     {
         if (corpus.CharacterCount > MaxCharacters)
@@ -77,12 +78,13 @@ public sealed partial class GeminiSummaryService(HttpClient http, Microsoft.Exte
     private sealed record GeminiReply(string Json,int? Tokens);
     private async Task<GeminiReply> RequestJsonAsync(object[] inputParts,string instructions,JsonElement schema,CancellationToken ct)
     {
-        if (!Configured) throw new InvalidOperationException("Configure a chave Gemini no servidor e confirme o projeto gratuito.");
+        var credentials=Credentials;
+        if (string.IsNullOrWhiteSpace(credentials.ApiKey)||!credentials.FreeTierProjectConfirmed) throw new InvalidOperationException("Configure a chave Gemini nas Configurações do aplicativo e confirme o projeto gratuito.");
         var model=Model;
         if(!Regex.IsMatch(model,"^[a-zA-Z0-9.-]+$"))throw new InvalidOperationException("Identificador de modelo inválido.");
         using var request = new HttpRequestMessage(HttpMethod.Post,
             $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent");
-        request.Headers.Add("x-goog-api-key", options.Value.ApiKey);
+        request.Headers.Add("x-goog-api-key", credentials.ApiKey);
         request.Content = JsonContent.Create(new {
             systemInstruction = new { parts = new[] { new { text = instructions } } },
             contents = new[] { new { role = "user", parts = inputParts } },
@@ -95,7 +97,7 @@ public sealed partial class GeminiSummaryService(HttpClient http, Microsoft.Exte
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync(ct);
-            throw new InvalidOperationException(FormatApiError((int)response.StatusCode, errorBody, options.Value.ApiKey));
+            throw new InvalidOperationException(FormatApiError((int)response.StatusCode, errorBody, credentials.ApiKey));
         }
         using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
         if (!body.RootElement.TryGetProperty("candidates", out var candidates) || candidates.GetArrayLength() == 0)

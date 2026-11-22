@@ -105,3 +105,13 @@ O backend permanece limitado a loopback por padrão. O script de inicialização
 Os commits foram organizados pelas etapas recuperáveis do desenvolvimento: extensão, resumos C#, indexação, fotos/testes, API para iPhone, aplicativo mobile consolidado e exportação PDF. Veja [HISTORICO.md](HISTORICO.md) para o que foi recuperado de snapshots e o que foi consolidado.
 
 As licenças dos componentes de terceiros estão preservadas nas respectivas pastas, incluindo o template Expo e o PDF.js.
+
+### Chave Gemini pelo aplicativo
+
+Abra a engrenagem → Configurações. Conecte ao Mac com endereço e código exibidos em `http://127.0.0.1:5180/mobile-setup`. Na primeira configuração, copie também o identificador de segurança dessa página. Cole a chave Gemini, confirme o nível gratuito e toque em **Salvar e aplicar chave**. Salvar não consulta o Gemini: a validade será confirmada na próxima geração.
+
+A chave fica no SecureStore do iPhone e somente na memória do backend. Após reiniciar o backend, toque em **Aplicar chave salva**; exportar a chave no Terminal é opcional. O servidor continua precisando rodar no Mac. **Esquecer chave no iPhone** remove a cópia local, sem alterar a sessão ativa no Mac.
+
+O envio usa RSA-OAEP/SHA-256 com aleatoriedade nativa e identifica o destinatário pelo SHA-256 da chave pública, conferido com o identificador copiado do Mac. Isso protege o conteúdo da chave mesmo com HTTP local; não transforma toda a conexão em HTTPS. A identidade RSA persiste em `App_Data/settings-rsa.pem` (ignorado pelo Git); a chave Gemini não é gravada no Mac. Se apagar esse arquivo, confira e atualize o identificador no aplicativo.
+
+Para receber esta atualização, reinicie o backend e o Expo (`npx expo start --clear` dentro de `mobile`). Não é necessário criar um novo build nativo: Expo Crypto e SecureStore estão disponíveis no Expo Go.

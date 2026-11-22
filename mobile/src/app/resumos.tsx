@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { router,useLocalSearchParams } from 'expo-router';
+import { router,useLocalSearchParams,useFocusEffect } from 'expo-router';
 import { Screen } from '../ui/Screen';
 import { Icon } from '../ui/Icon';
 import { colors } from '../ui/theme';
@@ -34,6 +34,7 @@ export default function Resumos(){
    if((source||courseKey)&&!entry)setError('Esta disciplina não está salva no iPhone. Atualize a biblioteca pelo Mac ou importe seus materiais.');
   }
  }catch{if(alive){setError('Não foi possível restaurar a conexão ou o resumo salvo.');setLoadedFor(selectionKey);}}finally{if(alive)setReady(true);}})();return()=>{alive=false;requestControl.current?.abort();};},[source,courseKey,selectionKey]);
+ useFocusEffect(useCallback(()=>{const control=new AbortController();let active=true;void(async()=>{try{const raw=await SecureStore.getItemAsync(CONFIG_KEY);if(!raw)return;const value=JSON.parse(raw),c=connection(value.url,value.token);const health=await request<{geminiConfigured:boolean}>(c,'/health','GET',undefined,control.signal);if(active){setConfig(c);setUrl(c.url);setToken(c.token);setConfigured(health.geminiConfigured);}}catch{/* Offline reading remains available. */}})();return()=>{active=false;control.abort();};},[]));
  async function perform(action:(signal:AbortSignal)=>Promise<void>){
   if(requestControl.current)return;
   const control=new AbortController();requestControl.current=control;setBusy(true);setError('');
@@ -67,7 +68,7 @@ export default function Resumos(){
   setConfigured(health.geminiConfigured);
   if(!health.geminiConfigured&&!target.summary){
    setStatus('A geração não foi iniciada.');
-   throw Error('Falta configurar a chave Gemini e a confirmação do nível gratuito no Terminal do backend. Reinicie o backend nesse mesmo Terminal e tente novamente.');
+   throw Error('Abra Configurações, insira ou aplique a chave Gemini salva e confirme o nível gratuito.');
   }
   setStatus('Solicitando a geração do resumo ao Mac…');
   const j=await request<Job>(config,`/courses/${encodeURIComponent(target.key)}/summary`,'POST',undefined,signal);
@@ -99,7 +100,7 @@ export default function Resumos(){
  if(!ready||loadedFor!==selectionKey)return <Screen back title="Sua revisão"><ActivityIndicator color={colors.blue}/></Screen>;
  const generating=job?.state==='queued'||job?.state==='running';
  const docs=job?.result?job.documents:course?.documents||[];
- return <Screen back title="Sua revisão" action={<Pressable accessibilityLabel="Configurações da revisão" style={styles.settingsButton} onPress={()=>setShowSettings(!showSettings)}><Icon name="settings" size={21} color={colors.muted}/></Pressable>}>
+ return <Screen back title="Sua revisão" action={<Pressable accessibilityLabel="Configurações da revisão" style={styles.settingsButton} onPress={()=>router.push('/configuracoes')}><Icon name="settings" size={21} color={colors.muted}/></Pressable>}>
   <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
    {showSettings||ready&&!config?<View style={styles.card}>
     <Text style={styles.subtitle}>Conectar ao Mac</Text>
@@ -119,7 +120,7 @@ export default function Resumos(){
    {(busy||!result)&&<Text accessibilityLiveRegion="polite" style={styles.note}>{status}</Text>}
    {!!error&&<Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
    {busy&&<ActivityIndicator color={colors.blue}/>}
-   {configured===false&&!result&&<View style={styles.notice}><Text style={styles.note}>A geração ainda não começou: configure o Gemini no Terminal do Mac. Depois, toque novamente para verificar.</Text></View>}
+   {configured===false&&!result&&<View style={styles.notice}><Text style={styles.note}>A geração ainda não começou: abra Configurações e aplique a chave Gemini. Depois, toque novamente para verificar.</Text></View>}
    {!result&&!generating&&<Pressable disabled={busy||!config||!ready} style={[styles.primary,(busy||!config||!ready)&&styles.disabled]} onPress={()=>void perform(prepare)}><Text style={styles.primaryText}>{busy?'Preparando sua revisão…':'Gerar resumo geral'}</Text><Icon name="arrow" size={18} color="white"/></Pressable>}
    {generating&&<View style={styles.progress}>
     <ActivityIndicator color={colors.blue}/><Text style={styles.subtitle}>Sua revisão está a caminho.</Text><Text accessibilityLiveRegion="polite" style={styles.note}>{job.progress}</Text>

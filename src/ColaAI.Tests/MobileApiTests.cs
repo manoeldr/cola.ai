@@ -24,7 +24,7 @@ public sealed class MobileApiTests:IAsyncLifetime
         b.Configuration["AllowedHosts"]="localhost;127.0.0.1";
         b.Services.PostConfigure<Microsoft.AspNetCore.HostFiltering.HostFilteringOptions>(o=>o.AllowedHosts=["localhost","127.0.0.1","192.168.1.10"]);
         b.WebHost.UseUrls("http://127.0.0.1:0");
-        b.Services.AddSingleton(new LocalLibrary(Path.Combine(folder,"test.db")));b.Services.AddSingleton<CorpusReader>();b.Services.AddTransient<StudyService>();
+        b.Services.AddSingleton(new LocalLibrary(Path.Combine(folder,"test.db")));b.Services.AddSingleton<CorpusReader>();b.Services.AddSingleton<GeminiKeyStore>();b.Services.AddTransient<StudyService>();
         b.Services.Configure<GeminiOptions>(o=>{o.ApiKey="fake-test-key";o.FreeTierProjectConfirmed=true;});
         b.Services.AddHttpClient<GeminiSummaryService>().ConfigurePrimaryHttpMessageHandler(()=>fake);
         b.Services.AddSingleton<MobileSummaryJobs>();b.Services.AddHostedService(p=>p.GetRequiredService<MobileSummaryJobs>());
@@ -42,6 +42,21 @@ public sealed class MobileApiTests:IAsyncLifetime
         using var browser=new HttpRequestMessage(HttpMethod.Get,"/api/mobile/health");browser.Headers.Add("Origin","https://example.com");
         Assert.Equal(HttpStatusCode.Unauthorized,(await client.SendAsync(browser)).StatusCode);
         var health=await client.GetStringAsync("/api/mobile/health");Assert.Contains("cola-ai-mobile",health);Assert.DoesNotContain("fake-test-key",health);
+    }
+    [Fact]public async Task SettingsAppliesEncryptedKeyWithoutGeminiCallOrSecretResponse()
+    {
+        const string secret="test_gemini_key_123456789012345";
+        var info=await Json(client.GetAsync("/api/mobile/settings/gemini"));
+        using var rsa=System.Security.Cryptography.RSA.Create();
+        rsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(info.GetProperty("publicKey").GetString()!),out _);
+        var encrypted=Convert.ToBase64String(rsa.Encrypt(System.Text.Encoding.UTF8.GetBytes(secret),System.Security.Cryptography.RSAEncryptionPadding.OaepSHA256));
+        var response=await client.PutAsJsonAsync("/api/mobile/settings/gemini",new{encryptedKey=encrypted,freeTierProjectConfirmed=true});
+        Assert.Equal(HttpStatusCode.OK,response.StatusCode);Assert.DoesNotContain(secret,await response.Content.ReadAsStringAsync());
+        Assert.Equal(secret,app.Services.GetRequiredService<GeminiKeyStore>().Current!.ApiKey);
+        Assert.True(app.Services.GetRequiredService<GeminiSummaryService>().Configured);Assert.Equal(0,fake.Calls);
+        Assert.Equal(HttpStatusCode.BadRequest,(await client.PutAsJsonAsync("/api/mobile/settings/gemini",new{apiKey=secret,freeTierProjectConfirmed=true})).StatusCode);
+        using var denied=new HttpRequestMessage(HttpMethod.Get,"/api/mobile/settings/gemini");denied.Headers.Authorization=new AuthenticationHeaderValue("Bearer","wrong");
+        Assert.Equal(HttpStatusCode.Unauthorized,(await client.SendAsync(denied)).StatusCode);
     }
     [Fact]public async Task ImportIndexesCorpusWithoutCallingGemini()
     {

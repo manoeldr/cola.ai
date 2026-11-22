@@ -8,7 +8,7 @@ import { readCorpus,shortCourse } from '../library/local';
 export default function PhotoHome(){
  const [course,setCourse]=useState<string|null>(null);
  useFocusEffect(useCallback(()=>{let alive=true;void readCorpus().then(c=>{if(alive)setCourse(c?shortCourse(c.course.title):null);}).catch(()=>{});return()=>{alive=false;};},[]));
- return <Screen action={<Pressable accessibilityLabel="Configurações de conexão" style={styles.settings} onPress={()=>router.push({pathname:'/resumos',params:{settings:'1'}})}><Icon name="settings" size={21}/></Pressable>}>
+ return <Screen action={<Pressable accessibilityLabel="Configurações de conexão" style={styles.settings} onPress={()=>router.push('/configuracoes')}><Icon name="settings" size={21}/></Pressable>}>
   <ScrollView contentContainerStyle={styles.content}>
    <View style={styles.intro}><Text style={styles.eyebrow}>SEU ASSISTENTE ACADÊMICO</Text><Text style={styles.title}>Tudo começa{ '\n' }com uma foto.</Text><Text style={styles.subtitle}>Uma página inteira, várias questões.</Text></View>
    <View style={styles.cameraArea}>

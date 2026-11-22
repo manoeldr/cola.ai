@@ -20,9 +20,22 @@ public static class MobileEndpoints
             else if(!loopback){context.Response.StatusCode=403;return;}
             await next(context);
         });
-        app.MapGet("/mobile-setup",(HttpResponse response)=>{response.Headers.CacheControl="no-store";return access.Enabled?Results.Content(access.PairingHtml(port),"text/html; charset=utf-8"):Results.NotFound();});
+        app.MapGet("/mobile-setup",(HttpResponse response,GeminiKeyStore keys)=>{response.Headers.CacheControl="no-store";return access.Enabled?Results.Content(access.PairingHtml(port,keys.Fingerprint),"text/html; charset=utf-8"):Results.NotFound();});
         var api=app.MapGroup("/api/mobile");
         api.MapGet("/health",(GeminiSummaryService gemini)=>Results.Ok(new {service="cola-ai-mobile",version=1,geminiConfigured=gemini.Configured,model=gemini.Model}));
+        api.MapGet("/settings/gemini",(GeminiKeyStore keys,GeminiSummaryService gemini)=>Results.Ok(new{publicKey=keys.PublicKey,fingerprint=keys.Fingerprint,configured=gemini.Configured,model=gemini.Model}));
+        api.MapPut("/settings/gemini",async(HttpRequest request,GeminiKeyStore keys,GeminiSummaryService gemini,CancellationToken ct)=>
+        {
+            if(!request.HasJsonContentType())return Results.StatusCode(415);
+            using var body=new MemoryStream();var chunk=new byte[1024];int count;
+            while((count=await request.Body.ReadAsync(chunk,ct))>0){if(body.Length+count>4096)return Results.StatusCode(413);await body.WriteAsync(chunk.AsMemory(0,count),ct);}
+            try
+            {
+                var envelope=JsonSerializer.Deserialize<GeminiKeyEnvelope>(body.ToArray(),CorpusReader.JsonOptions)??throw new InvalidDataException("Envio inválido.");
+                keys.Apply(envelope);return Results.Ok(new{configured=gemini.Configured,model=gemini.Model,message="Chave aplicada ao Mac. A validade será verificada ao usar o Gemini."});
+            }
+            catch(Exception e)when(e is JsonException or InvalidDataException){return Results.BadRequest(new{error=e is InvalidDataException?e.Message:"Envio inválido."});}
+        });
         api.MapPost("/courses/import",async(HttpRequest request,CorpusReader reader,LocalLibrary library,StudyService study,MobileSummaryJobs jobs,CancellationToken ct)=>
         {
             if(request.ContentLength>CorpusReader.MaxUploadBytes)return Results.Json(new{error="O acervo excede 20 MB."},statusCode:413);

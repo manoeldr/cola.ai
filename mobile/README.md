@@ -117,3 +117,13 @@ O mapa contém até oito temas, com até cinco tópicos por tema, sem parágrafo
 Os mapas são salvos por disciplina em `cola-ai-mapas` no iPhone e em cache no SQLite do Mac. A versão do resumo e o modelo fazem parte da identificação do mapa: alterar o acervo/resumo não reaproveita um mapa antigo como se fosse atual. Depois de salvo no iPhone, o mapa pode ser consultado e compartilhado offline.
 
 Para habilitar as novas rotas, reinicie o backend no mesmo Terminal que já contém a chave Gemini (`zsh scripts/start-mobile-backend.sh`, a partir da raiz do projeto) e recarregue o Expo. O botão fica junto da exportação do resumo em PDF. Os testes usam um transporte de IA simulado; o resultado real e a interação de zoom/compartilhamento ainda precisam de validação no iPhone.
+
+### Chave Gemini pelo aplicativo
+
+Abra a engrenagem → Configurações. Conecte ao Mac com endereço e código exibidos em `http://127.0.0.1:5180/mobile-setup`. Na primeira configuração, copie também o identificador de segurança dessa página. Cole a chave Gemini, confirme o nível gratuito e toque em **Salvar e aplicar chave**. Salvar não consulta o Gemini: a validade será confirmada na próxima geração.
+
+A chave fica no SecureStore do iPhone e somente na memória do backend. Após reiniciar o backend, toque em **Aplicar chave salva**; exportar a chave no Terminal é opcional. O servidor continua precisando rodar no Mac. **Esquecer chave no iPhone** remove a cópia local, sem alterar a sessão ativa no Mac.
+
+O envio usa RSA-OAEP/SHA-256 com aleatoriedade nativa e identifica o destinatário pelo SHA-256 da chave pública, conferido com o identificador copiado do Mac. Isso protege o conteúdo da chave mesmo com HTTP local; não transforma toda a conexão em HTTPS. A identidade RSA persiste em `App_Data/settings-rsa.pem` (ignorado pelo Git); a chave Gemini não é gravada no Mac. Se apagar esse arquivo, confira e atualize o identificador no aplicativo.
+
+Para receber esta atualização, reinicie o backend e o Expo (`npx expo start --clear` dentro de `mobile`). Não é necessário criar um novo build nativo: Expo Crypto e SecureStore estão disponíveis no Expo Go.

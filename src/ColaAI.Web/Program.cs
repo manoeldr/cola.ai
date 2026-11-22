@@ -21,6 +21,7 @@ builder.Services.AddSingleton<CorpusReader>();
 builder.Services.AddSingleton(new LocalLibrary(Path.Combine(builder.Environment.ContentRootPath, "App_Data", "cola-ai.db")));
 builder.Services.AddTransient<StudyService>();
 builder.Services.AddTransient<PhotoService>();
+builder.Services.AddSingleton(new GeminiKeyStore(Path.Combine(builder.Environment.ContentRootPath,"App_Data","settings-rsa.pem")));
 builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection("Gemini"));
 builder.Services.AddHttpClient<GeminiSummaryService>(client => client.Timeout = TimeSpan.FromMinutes(4));
 var app = builder.Build();
