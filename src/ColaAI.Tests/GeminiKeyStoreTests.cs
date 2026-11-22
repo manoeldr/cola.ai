@@ -17,6 +17,11 @@ public class GeminiKeyStoreTests
         Assert.Throws<InvalidDataException>(()=>store.Apply(new("invalid",true)));
         Assert.Equal(key,store.Current.ApiKey);
     }
+    [Fact] public void AcceptsDottedAuthorizationKey()
+    {
+        using var store=new GeminiKeyStore();const string key="AQ.synthetic_key_for_format_test_12345678901234567890";
+        store.Apply(Envelope(store,key));Assert.Equal(key,store.Current!.ApiKey);
+    }
     [Fact] public void PersistsRecipientIdentityButNeverGeminiKey()
     {
         var folder=Path.Combine(Path.GetTempPath(),Guid.NewGuid().ToString());var file=Path.Combine(folder,"rsa.pem");

@@ -39,7 +39,7 @@ public sealed class GeminiKeyStore:IDisposable
         try
         {
             var key=Encoding.UTF8.GetString(plain).Trim();
-            if(!Regex.IsMatch(key,"^[A-Za-z0-9_-]{20,160}$"))throw new InvalidDataException("Cole somente a chave Gemini, sem aspas ou comandos.");
+            if(!Regex.IsMatch(key,"^[A-Za-z0-9_.-]{20,160}$"))throw new InvalidDataException("Cole somente a chave Gemini, sem aspas ou comandos.");
             Volatile.Write(ref current,new(key,true));
         }
         finally{CryptographicOperations.ZeroMemory(plain);}
